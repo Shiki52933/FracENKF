@@ -60,7 +60,12 @@ mat model(mat& ensemble, int idx, mat& sys_var){
 }
 
 void lorenz63EnKF(){
-
+    // 参数
+    int ensemble_size = 20;
+    vec init_ave{0., 0., 0.};
+    mat init_var(3, 3, arma::fill::eye);
+    init_var *= 10;
+    
 }
 
 int main(int argc, char** argv){
