@@ -148,6 +148,7 @@ int main(int argc, char** argv){
     cmd.add_options()("beta,b", value<double>(&beta)->default_value(8.0/3), "beta");
     cmd.add_options()("ob_var,o", value<double>(&ob_var)->default_value(0.1), "ob_error");
     cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.01), "system_error");
+    cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
     cmd.add_options()("real_sys_var,rs", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
     cmd.add_options()("select,sl", value<int>(&select_every)->default_value(10), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
@@ -168,4 +169,13 @@ int main(int argc, char** argv){
 */ 
 
     lorenz63EnKF();
+
+    std::cout<<"sigma: "<<sigma<<'\n'
+            <<"rho: "<<rho<<'\n'
+            <<"beta: "<<beta<<'\n'
+            <<"ob_var: "<<ob_var<<'\n'
+            <<"sys_var: "<<sys_var<<'\n'
+            <<"real_sys_var: "<<real_sys_var<<'\n'
+            <<"select every: "<<select_every<<'\n'
+            <<"ensemble size: "<<ensemble_size<<'\n';
 }
