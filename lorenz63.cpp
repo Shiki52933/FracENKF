@@ -1,6 +1,7 @@
 #include "StochasticENKF.hpp"
 #include <armadillo>
 #include <iostream>
+#include <boost/program_options.hpp>
 
 
 mat generate_lorenz63(double sigma, double rho, double beta, double dt, double t_max, vec x0, mat sys_var){
@@ -9,7 +10,10 @@ mat generate_lorenz63(double sigma, double rho, double beta, double dt, double t
         num_iter++;
 
     mat sol(3, num_iter+1);
-    mat perturb = mvnrnd(vec(3,arma::fill::zeros), sys_var, num_iter);
+
+    mat temp, perturb(3, num_iter, arma::fill::zeros);
+    if(arma::inv(temp, sys_var))
+        perturb = mvnrnd(vec(3,arma::fill::zeros), sys_var, num_iter);
 
     sol.col(0) = x0;
     for(int i=0; i<num_iter; i++){
@@ -42,12 +46,28 @@ mat H_ob(mat& ensemble){
     return H * ensemble;
 }
 
-mat model(mat& ensemble, int idx, mat& sys_var){
+namespace config{
     double sigma = 10, rho = 28, beta = 8.0/3;
     double dt = 0.001;
 
+    double ob_var = 1;
+    double sys_var = 0.01, real_sys_var = 0.;
+    double init_var_ = 10;
+    int select_every = 10;
+
+    int ensemble_size = 20;
+}
+
+mat model(mat& ensemble, int idx, mat& sys_var){
+    double sigma = config::sigma, rho = config::rho, beta = config::beta;
+    double dt = config::dt;
+
     mat sol = ensemble;
-    mat perturb = mvnrnd(vec(3, arma::fill::zeros), sys_var, ensemble.n_cols);
+
+    mat temp, perturb(3, ensemble.n_cols, arma::fill::zeros);
+    if(arma::inv(temp, sys_var))
+        perturb = mvnrnd(vec(3, arma::fill::zeros), sys_var, ensemble.n_cols);
+
     for(int i=0; i<ensemble.n_cols; i++){
         double x_old = sol.col(i)[0];
         double y_old = sol.col(i)[1];
@@ -67,15 +87,15 @@ mat model(mat& ensemble, int idx, mat& sys_var){
 
 void lorenz63EnKF(){
     // 参数
-    double ob_var = 0.1;
-    double sys_var = 0.01;
-    double init_var_ = 10;
-    int select_every = 10;
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
     // 系统误差
     auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
     *sys_error_ptr *= sys_var;
     // 参考解
-    mat ref = generate_lorenz63(10, 28, 8.0/3, 0.001, 200, vec{2,2,2}, *sys_error_ptr*0);
+    mat ref = generate_lorenz63(config::sigma, config::rho, config::beta, config::dt, 200, vec{2,2,2}, *sys_error_ptr*config::real_sys_var);
     mat all_ob = H_ob(ref);
     // 初始值
     vec init_ave{0., 0., 0.};
@@ -105,7 +125,7 @@ void lorenz63EnKF(){
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
     
-    int ensemble_size = 20;
+    int ensemble_size = config::ensemble_size;
     std::vector<vec> analysis_ = StochasticENKF(ensemble_size, init_ave, init_var, ob_list, num_iter, ob_errors, ob_op, model, sys_errors);
     arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
     
@@ -119,5 +139,33 @@ void lorenz63EnKF(){
 }
 
 int main(int argc, char** argv){
+    using namespace boost::program_options;
+    using namespace config;
+
+    options_description cmd("lorenz63 EnKF");
+    cmd.add_options()("sigma,s", value<double>(&sigma)->default_value(10), "sigma");
+    cmd.add_options()("rho,r", value<double>(&rho)->default_value(28), "rho");
+    cmd.add_options()("beta,b", value<double>(&beta)->default_value(8.0/3), "beta");
+    cmd.add_options()("ob_var,o", value<double>(&ob_var)->default_value(0.1), "ob_error");
+    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.01), "system_error");
+    cmd.add_options()("real_sys_var,rs", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
+    cmd.add_options()("select,sl", value<int>(&select_every)->default_value(10), "select every");
+    cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
+    
+    variables_map map;
+    store(parse_command_line(argc, argv, cmd), map);
+    notify(map);
+
+/*
+    config::sigma = map["sigma"].as<double>();
+    config::rho = map["rho"].as<double>();
+    config::beta = map["beta"].as<double>();
+    config::ob_var = map["ob error"].as<double>();
+    config::sys_var = map["system error"].as<double>();
+    config::real_sys_var = map["real system error"].as<double>();
+    config::select_every = map["select every"].as<int>();
+    config::ensemble_size = map["ensemble size"].as<int>();
+*/ 
+
     lorenz63EnKF();
 }

@@ -27,7 +27,7 @@ std::vector<vec> StochasticENKF(int ensembleSize, vec initAverage, mat initUncer
                                 int numIters, Errors& obErrors, ObserveOperator obOp, Model model, Errors& sysErrors){
     // 初始化
     std::vector<vec> res;
-    mat ensemble = mvnrnd(initAverage, initUncertainty, ensembleSize);
+    mat ensemble = arma::mvnrnd(initAverage, initUncertainty, ensembleSize);
 
     for(int i=0; i<numIters; i++){
         mat ensembleAnalysis;
@@ -36,7 +36,9 @@ std::vector<vec> StochasticENKF(int ensembleSize, vec initAverage, mat initUncer
             int obSize = obResults[i].size();
             // 如果这个时刻有观测，则进行同化和修正
             // 生成扰动后的观测
-            mat perturb = mvnrnd(vec(obSize, arma::fill::zeros), obErrors[i], ensembleSize);
+            mat temp, perturb(obSize, ensembleSize, arma::fill::zeros);
+            if(arma::inv(temp, obErrors[i]))
+                perturb = arma::mvnrnd(vec(obSize, arma::fill::zeros), obErrors[i], ensembleSize);
             mat afterPerturb = perturb.each_col() + obResults[i];
 
             // 平均值
@@ -51,7 +53,7 @@ std::vector<vec> StochasticENKF(int ensembleSize, vec initAverage, mat initUncer
             mat y_mean = mean(y_f, 1);
 
             mat auxiliary = afterPerturb - y_f;
-            mat temp = y_f - perturb;
+            temp = y_f - perturb;
             y_f = (temp.each_col() - (y_mean - perturbMean)) / sqrt(ensembleSize - 1);
 
             // 计算增益矩阵
