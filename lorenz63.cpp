@@ -44,6 +44,14 @@ mat H_ob(mat& ensemble){
     H.col(1) = b;
     H = H.t();
     return H * ensemble;
+    /*
+    mat ob(2, ensemble.n_cols);
+    for(int i=0; i<ensemble.n_cols; i++){
+        ob(0, i) = sin(ensemble(0, i)) + cos(ensemble(1, i));
+        ob(1, i) = sin(ensemble(1, i)) + cos(ensemble(2, i));
+    }
+    return ob;
+    */
 }
 
 namespace config{
@@ -173,6 +181,7 @@ int main(int argc, char** argv){
     std::cout<<"sigma: "<<sigma<<'\n'
             <<"rho: "<<rho<<'\n'
             <<"beta: "<<beta<<'\n'
+            <<"init_var: "<<init_var_<<'\n'
             <<"ob_var: "<<ob_var<<'\n'
             <<"sys_var: "<<sys_var<<'\n'
             <<"real_sys_var: "<<real_sys_var<<'\n'
