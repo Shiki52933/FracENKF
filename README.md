@@ -7,4 +7,6 @@ sudo apt-get install libboost-dev
 sudo apt-get install libarmadillo-dev
 
 # 编译命令
-g++ lorenz63.cpp -l armadillo -l boost_program_options -O2
+g++ lorenz63.cpp -l armadillo -l boost_program_options -O2 -o lorenz63
+
+g++ lorenz96.cpp -l armadillo -l boost_program_options -O2 -o lorenz96

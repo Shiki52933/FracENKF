@@ -1,10 +1,14 @@
 #include <armadillo>
 #include <vector>
+#include <utility>
+#include <tuple>
+#include <future>
+#include <thread>
 #include <memory>
 #include <math.h>
 
-using namespace arma;
-typedef arma::mat mat;
+using arma::mat;
+using arma::vec;
 
 class Errors{
     std::vector<std::shared_ptr<mat>> mPtrs;
@@ -22,15 +26,26 @@ public:
 
 typedef mat (*ObserveOperator)(mat&);
 typedef mat (*Model)(mat& ensembleAnalysis, int idx, mat& sysVar);
+extern double compute_skewness(const mat& ensemble);
+extern double compute_kurtosis(const mat& ensemble);
 
-std::vector<vec> StochasticENKF(int ensembleSize, vec initAverage, mat initUncertainty, std::vector<vec>& obResults, 
-                                int numIters, Errors& obErrors, ObserveOperator obOp, Model model, Errors& sysErrors){
+template<typename T, typename S>
+std::tuple<std::vector<vec>, std::vector<double>, std::vector<double>> 
+StochasticENKF(int ensembleSize, vec initAverage, mat initUncertainty, std::vector<vec>& obResults, 
+               int numIters, Errors& obErrors, T obOp, S model, Errors& sysErrors){
     // 初始化
     std::vector<vec> res;
+    std::vector<double> skewnesses;
+    std::vector<double> kurtosises;
     mat ensemble = arma::mvnrnd(initAverage, initUncertainty, ensembleSize);
 
     for(int i=0; i<numIters; i++){
         mat ensembleAnalysis;
+
+        std::future<double> skewness = std::async(std::launch::deferred, compute_skewness, ensemble);
+        // skewnesses.push_back(compute_skewness(ensemble));
+        std::future<double> kurtosis = std::async(std::launch::deferred, compute_kurtosis, ensemble);  
+        // kurtosises.push_back(compute_kurtosis(ensemble));
 
         if(!obResults[i].is_empty()){
             int obSize = obResults[i].size();
@@ -70,10 +85,12 @@ std::vector<vec> StochasticENKF(int ensembleSize, vec initAverage, mat initUncer
         // 如果不是最后一步，就往前推进
         if(i != numIters-1)
             ensemble = model(ensembleAnalysis, i, sysErrors[i]);
-        
+
+        skewnesses.push_back(skewness.get());
+        kurtosises.push_back(kurtosis.get());
     }
 
-    return res;
+    return std::tuple<std::vector<vec>, std::vector<double>, std::vector<double>>(res, skewnesses, kurtosises);
 }
 
 vec BAlpha(double alpha, int n){
@@ -82,4 +99,50 @@ vec BAlpha(double alpha, int n){
         res[i] = pow(i, 1-alpha);
     }
     return res.subvec(1, n+1) - res.subvec(0, n);
+}
+
+double compute_skewness(const mat& ensemble){
+    // mean and variance
+    int ensembleSize = ensemble.n_cols;
+    vec mean = vec(arma::mean(ensemble, 1));
+    mat x_f = (ensemble.each_col() - mean) / sqrt(ensembleSize);
+    mat variance = x_f *x_f.t();
+    mat var_inverse = variance.i();
+
+    // calculate skewness
+    double skewness = 0;
+    for(int i=0; i<ensembleSize; i++){
+        mat deviation_i = ensemble.col(i) - mean;
+        for(int j=0; j<ensembleSize; j++){
+            mat deviation_j = ensemble.col(j) - mean;
+            mat t = deviation_i.t() * var_inverse * deviation_j;
+            skewness += pow(t(0,0), 3);
+        }
+    }
+    skewness /= ensembleSize * ensembleSize;
+    return skewness;
+}
+
+double compute_kurtosis(const mat& ensemble){
+    // mean and variance
+    double ensembleSize = ensemble.n_cols;
+    double p = ensemble.n_rows;
+    vec mean = vec(arma::mean(ensemble, 1));
+    mat x_f = (ensemble.each_col() - mean) / sqrt(ensembleSize);
+    mat variance = x_f *x_f.t();
+    mat var_inverse = variance.i();
+
+    // calculate kurtosis
+    double kurtosis = 0;
+    for(int i=0; i<ensembleSize; i++){
+        mat deviation_i = ensemble.col(i) - mean;
+        mat t = deviation_i.t() * var_inverse * deviation_i;
+        kurtosis += pow(t(0,0), 2);
+    }
+    kurtosis /= ensembleSize;
+
+    // convert to N(0, 1)
+    kurtosis -= (ensembleSize - 1) / (ensembleSize + 1) * p * (p + 2);
+    kurtosis /= sqrt(8.0 / ensembleSize * p * (p + 2));
+    return kurtosis;
 }

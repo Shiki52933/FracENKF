@@ -1,26 +1,16 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
-sol = np.loadtxt("./data/lorenz63.csv")
+sol = np.loadtxt("./data/lorenz96.csv")
 skewness = np.loadtxt("./data/skewness.csv")
 kurtosis = np.loadtxt("./data/kurtosis.csv")
 
-fig = plt.figure()
-ax1 = plt.axes(projection='3d')
-ax1.plot3D(sol[:,0], sol[:,1], sol[:,2], 'gray') 
+plt.plot(range(len(sol)), sol[:, 0])
 #plt.show()
-plt.savefig("./images/lorenz63.png")
+plt.savefig("./images/lorenz96-1.png")
 plt.close()
 
 analysis = np.loadtxt("./data/analysis.csv")
-
-fig = plt.figure()
-ax1 = plt.axes(projection='3d')
-ax1.plot3D(analysis[:,0], analysis[:,1], analysis[:,2], 'gray') 
-#plt.show()
-plt.savefig("./images/analysis.png")
-plt.close()
-
 error = analysis - sol
 ab_error = np.max(np.abs(error), axis=-1)
 

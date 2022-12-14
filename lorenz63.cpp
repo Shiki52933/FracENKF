@@ -13,7 +13,7 @@ mat generate_lorenz63(double sigma, double rho, double beta, double dt, double t
 
     mat temp, perturb(3, num_iter, arma::fill::zeros);
     if(arma::inv(temp, sys_var))
-        perturb = mvnrnd(vec(3,arma::fill::zeros), sys_var, num_iter);
+        perturb = arma::mvnrnd(vec(3,arma::fill::zeros), sys_var, num_iter);
 
     sol.col(0) = x0;
     for(int i=0; i<num_iter; i++){
@@ -74,7 +74,7 @@ mat model(mat& ensemble, int idx, mat& sys_var){
 
     mat temp, perturb(3, ensemble.n_cols, arma::fill::zeros);
     if(arma::inv(temp, sys_var))
-        perturb = mvnrnd(vec(3, arma::fill::zeros), sys_var, ensemble.n_cols);
+        perturb = arma::mvnrnd(vec(3, arma::fill::zeros), sys_var, ensemble.n_cols);
 
     for(int i=0; i<ensemble.n_cols; i++){
         double x_old = sol.col(i)[0];
@@ -134,16 +134,28 @@ void lorenz63EnKF(){
         sys_errors.add(sys_error_ptr);
     
     int ensemble_size = config::ensemble_size;
-    std::vector<vec> analysis_ = StochasticENKF(ensemble_size, init_ave, init_var, ob_list, num_iter, ob_errors, ob_op, model, sys_errors);
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    
+    auto ENKFResult = StochasticENKF(ensemble_size, init_ave, init_var, ob_list, num_iter, ob_errors, ob_op, model, sys_errors);
+    std::vector<vec> analysis_ = std::get<0>(ENKFResult);
+    std::vector<double> skewness_ = std::get<1>(ENKFResult);
+    std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
     std::cout<<"ENKF okay\n";
+
+    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
     for(int i=0; i<analysis.n_rows; i++){
         analysis(i, 0) = analysis_[i](0);
         analysis(i, 1) = analysis_[i](1);
         analysis(i, 2) = analysis_[i](2);
     }
-    analysis.save("analysis.csv", arma::raw_ascii);
+    arma::mat skewness(skewness_.size(), 1);
+    arma::mat kurtosis(skewness_.size(), 1);
+    for(int i=0; i<skewness.n_rows; i++){
+        skewness(i, 0) = skewness_[i];
+        kurtosis(i, 0) = kurtosis_[i];
+    }
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+    skewness.save("./data/skewness.csv", arma::raw_ascii);
+    kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
 int main(int argc, char** argv){
@@ -158,7 +170,7 @@ int main(int argc, char** argv){
     cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.01), "system_error");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
     cmd.add_options()("real_sys_var,rs", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
-    cmd.add_options()("select,sl", value<int>(&select_every)->default_value(10), "select every");
+    cmd.add_options()("select,sl", value<int>(&select_every)->default_value(50), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
     
     variables_map map;
@@ -175,7 +187,7 @@ int main(int argc, char** argv){
     config::select_every = map["select every"].as<int>();
     config::ensemble_size = map["ensemble size"].as<int>();
 */ 
-
+    arma::arma_rng::set_seed_random();
     lorenz63EnKF();
 
     std::cout<<"sigma: "<<sigma<<'\n'
