@@ -1,3 +1,4 @@
+#pragma once
 #include <armadillo>
 #include <vector>
 #include <utility>
