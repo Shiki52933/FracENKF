@@ -3,6 +3,7 @@
 #include <utility>
 #include <tuple>
 #include <future>
+#include <iostream>
 #include <thread>
 #include <memory>
 #include <math.h>
@@ -40,6 +41,7 @@ StochasticENKF(int ensembleSize, vec initAverage, mat initUncertainty, std::vect
     mat ensemble = arma::mvnrnd(initAverage, initUncertainty, ensembleSize);
 
     for(int i=0; i<numIters; i++){
+        std::cout<<"time step: "<<i<<'\n';
         mat ensembleAnalysis;
 
         std::future<double> skewness = std::async(std::launch::deferred, compute_skewness, ensemble);

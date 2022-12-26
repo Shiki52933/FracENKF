@@ -10,6 +10,7 @@ namespace config{
     int ob_dim = 6;
     double F = 8;
     double dt = 0.005;
+    double t_max = 20;
 
     double ob_var = 0.01;
     double sys_var = 0.01, real_sys_var = 0.;
@@ -114,11 +115,12 @@ void lorenz96EnKF(){
     *sys_error_ptr *= sys_var;
     // 参考解
     vec v0 = arma::randn(dim);
-    mat ref = generate_lorenz96(v0, config::F, 100, config::dt, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
     mat all_ob = H_ob(ref.t());
     ref.save("./data/lorenz96.csv", arma::raw_ascii);
     // 初始值
     vec init_ave(dim, arma::fill::zeros);
+    // init_ave = v0;
     mat init_var(dim, dim, arma::fill::eye);
     init_var *= init_var_;
     // ob
@@ -154,9 +156,9 @@ void lorenz96EnKF(){
 
     arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
     for(int i=0; i<analysis.n_rows; i++){
-        analysis(i, 0) = analysis_[i](0);
-        analysis(i, 1) = analysis_[i](1);
-        analysis(i, 2) = analysis_[i](2);
+        for(int j=0; j<dim; j++){
+            analysis(i, j) = analysis_[i](j);
+        }
     }
     arma::mat skewness(skewness_.size(), 1);
     arma::mat kurtosis(skewness_.size(), 1);
@@ -184,7 +186,8 @@ int main(int argc, char** argv){
     cmd.add_options()("real_sys_var,r", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
     cmd.add_options()("select,s", value<int>(&select_every)->default_value(10), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
-    
+    cmd.add_options()("max_time,t", value<double>(&t_max)->default_value(20), "max time");
+
     variables_map map;
     store(parse_command_line(argc, argv, cmd), map);
     notify(map);
@@ -199,5 +202,6 @@ int main(int argc, char** argv){
             <<"sys_var: "<<sys_var<<'\n'
             <<"real_sys_var: "<<real_sys_var<<'\n'
             <<"select every: "<<select_every<<'\n'
-            <<"ensemble size: "<<ensemble_size<<'\n';
+            <<"ensemble size: "<<ensemble_size<<'\n'
+            <<"max time: "<<t_max<<'\n';
 }
