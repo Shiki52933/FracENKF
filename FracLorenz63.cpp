@@ -1,4 +1,3 @@
-#pragma once
 #include "StochasticENKF.hpp"
 #include "ParticleFilter.hpp"
 #include <utility>
@@ -11,7 +10,7 @@ extern mat compute_bino(drowvec orders, int n);
 
 namespace config{
     drowvec derivative_orders{0.995, 0.995, 0.995};
-    int window_length = 20;
+    int window_length = 10;
     mat bino = compute_bino(derivative_orders, window_length);
 
     double sigma = 10., rho = 28., beta = 8./3, dt = 0.005, max_time;
@@ -44,7 +43,7 @@ namespace config{
         real_var *= var;
         
         mat perturb = arma::mvnrnd(vec(ensemble.n_rows,arma::fill::zeros), real_var, ensemble.n_cols);
-        ensemble.submat(0,0,2,ensemble.n_cols-1) += perturb;
+        ensemble += perturb;
     }
 
     void changeNoise(mat& ensemble, mat& sys_var){
@@ -79,13 +78,15 @@ mat FracLorenz63Model(const mat& ensemble, int idx, mat sys_var){
         mat ret(dim*(window+1), ensemble.n_cols, arma::fill::none);
         ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - fracDirivative;
         ret.submat(dim,0,ret.n_rows-1,ret.n_cols-1) = ensemble;
-        config::sys_var_ptr(ret, sys_var);
+        if(config::sys_var_ptr)
+            config::sys_var_ptr(ret, sys_var);
         return ret;
     }else{
         mat ret(ensemble.n_rows, ensemble.n_cols, arma::fill::none);
         ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - fracDirivative;
         ret.submat(dim,0,ret.n_rows-1,ret.n_cols-1) = ensemble.submat(0,0,ensemble.n_rows-dim-1,ensemble.n_cols-1);
-        config::sys_var_ptr(ret, sys_var);
+        if(config::sys_var_ptr)
+            config::sys_var_ptr(ret, sys_var);
         return ret;
     }
 }
@@ -154,12 +155,16 @@ void fracLorenz63EnKF(){
     std::cout<<"reference solution okay\n";
 
     mat H = arma::randn(2, 3);
-    auto H_ob = [&H](const mat& ensemble){
+    auto H_ob = [&H](const mat& ensemble) -> mat {
+        // std::cout<<"ensemble n_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
         if(ensemble.n_rows == 3){
             return H * ensemble;
         }else{
+            // std::cout<<"start multiplication\n";
             mat real_time = ensemble.submat(0, 0, 2, ensemble.n_cols-1);
-            return H * real_time;
+            mat ret = H * real_time;
+            // std::cout<<"end multiplication\n";
+            return ret;
         }
     };
     // mat temp = ref.t();
@@ -233,7 +238,7 @@ int main(int argc, char** argv){
     cmd.add_options()("beta,b", value<double>(&beta)->default_value(8.0/3), "beta");
     cmd.add_options()("ob_var,o", value<double>(&ob_var)->default_value(0.1), "ob_error");
     cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.1), "system_error");
-    cmd.add_options()("sys_var_type,y", value<std::string>(&sys_var_type)->default_value("real"), "system_error_type");
+    cmd.add_options()("sys_var_type,y", value<std::string>(&sys_var_type)->default_value("null"), "system_error_type");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
     cmd.add_options()("real_sys_var,rs", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
     cmd.add_options()("select,sl", value<int>(&select_every)->default_value(10), "select every");
@@ -262,7 +267,7 @@ int main(int argc, char** argv){
     else if(sys_var_type == "noise")
         sys_var_ptr = changeNoise;
     else
-        throw("not supported system variance type\n");
+        sys_var_ptr = nullptr;
     
     arma::arma_rng::set_seed_random();
     // lorenz63EnKF();

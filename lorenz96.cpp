@@ -263,10 +263,10 @@ int main(int argc, char** argv){
     options_description cmd("lorenz96 EnKF");
     cmd.add_options()("problem,p", value<std::string>(&problem)->default_value("ENKF"), "type: ENKF or Particle");
     cmd.add_options()("dim,d", value<int>(&dim)->default_value(40), "dimension of system");
-    cmd.add_options()("ob_dim,o", value<int>(&ob_dim)->default_value(6), "ob dimension");
+    cmd.add_options()("ob_dim,o", value<int>(&ob_dim)->default_value(8), "ob dimension");
     cmd.add_options()("F,F", value<double>(&F)->default_value(8.0), "F");
     cmd.add_options()("ob_var,b", value<double>(&ob_var)->default_value(0.1), "ob_error");
-    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.0), "system_error");
+    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.01), "system_error");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
     cmd.add_options()("real_sys_var,r", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
     cmd.add_options()("select,s", value<int>(&select_every)->default_value(10), "select every");

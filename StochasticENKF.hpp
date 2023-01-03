@@ -42,7 +42,7 @@ StochasticENKF(int ensembleSize, vec initAverage, mat initUncertainty, std::vect
     mat ensemble = arma::mvnrnd(initAverage, initUncertainty, ensembleSize);
 
     for(int i=0; i<numIters; i++){
-        std::cout<<"time step: "<<i<<'\n';
+        std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
         mat ensembleAnalysis;
 
         std::future<double> skewness = std::async(std::launch::deferred, compute_skewness, ensemble);
@@ -75,7 +75,7 @@ StochasticENKF(int ensembleSize, vec initAverage, mat initUncertainty, std::vect
             y_f = (temp.each_col() - (y_mean - perturbMean)) / sqrt(ensembleSize - 1);
 
             // 计算增益矩阵
-            mat gain = x_f * y_f.t() * (y_f * y_f.t()).i();
+            mat gain = x_f * y_f.t() * pinv(y_f * y_f.t());
             // 更新集合
             ensembleAnalysis = ensemble + gain * auxiliary;
         }else{
@@ -110,7 +110,7 @@ double compute_skewness(const mat& ensemble){
     vec mean = vec(arma::mean(ensemble, 1));
     mat x_f = (ensemble.each_col() - mean) / sqrt(ensembleSize);
     mat variance = x_f *x_f.t();
-    mat var_inverse = variance.i();
+    mat var_inverse = arma::pinv(variance);
 
     // calculate skewness
     double skewness = 0;
@@ -133,7 +133,7 @@ double compute_kurtosis(const mat& ensemble){
     vec mean = vec(arma::mean(ensemble, 1));
     mat x_f = (ensemble.each_col() - mean) / sqrt(ensembleSize);
     mat variance = x_f *x_f.t();
-    mat var_inverse = variance.i();
+    mat var_inverse = arma::pinv(variance);
 
     // calculate kurtosis
     double kurtosis = 0;

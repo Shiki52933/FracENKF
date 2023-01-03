@@ -7,11 +7,11 @@ sudo apt-get install libboost-dev
 sudo apt-get install libarmadillo-dev
 
 # 编译命令
-g++ lorenz63.cpp -l armadillo -l boost_program_options -O2 -o lorenz63
+g++ lorenz63.cpp -l armadillo -l boost_program_options -O3 -o lorenz63
 
-g++ lorenz96.cpp -l armadillo -l boost_program_options -O2 -o lorenz96
+g++ lorenz96.cpp -l armadillo -l boost_program_options -O3 -o lorenz96
 
-g++ FracLorenz63.cpp -l armadillo -l boost_program_options -O2 -o FracLorenz63
+g++ FracLorenz63.cpp -l armadillo -l boost_program_options -O3 -o FracLorenz63
 
 # 有趣的结果
  ./lorenz96 -p ENKF -d 40 -F 8 -b 0.1 -i 10 -r 0 -s 10 -n 200 -t 10 -v 1e-4 -o 8展示了偏度、丰度和enkf绝对误差的有趣关联。
