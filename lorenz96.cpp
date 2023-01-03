@@ -1,4 +1,5 @@
 #include "StochasticENKF.hpp"
+#include "ParticleFilter.hpp"
 
 #include <iostream>
 #include <boost/program_options.hpp>
@@ -172,16 +173,100 @@ void lorenz96EnKF(){
     kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
+void lorenz96particle(){
+    // 参数
+    int dim = config::dim;
+    int ob_dim = config::ob_dim;
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+
+    // 参考解
+    vec v0 = arma::randn(dim);
+    mat ref = generate_lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
+    ref.save("./data/lorenz96.csv", arma::raw_ascii);
+    
+    // ob算子
+    mat H = arma::randn(ob_dim, dim);
+    auto H_ob = [&H](const mat& ensemble){
+        return H * ensemble;
+    };
+    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    // 辅助lambda表达式
+    auto likehood = [&H, &error_ptr](vec solid, vec ob){
+        vec ob_ = H * solid;
+        // std::cout<<"enter likehood\n";
+        vec misfit = ob_ - ob;
+        mat likehood = -1./2 * misfit.t() * error_ptr->i() * misfit;
+        // std::cout<<"end likehood\n";
+        return exp(likehood(0, 0));
+    };
+
+    std::vector<vec> ob_list;
+    Errors ob_errors;
+    mat all_ob = H_ob(ref.t());
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+
+    // 系统误差
+    Errors sys_errors;
+    for(int i=0; i<ob_list.size()+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    // 初始值
+    int size = config::ensemble_size;
+    vec init_ave(dim, arma::fill::zeros);
+    mat init_var(dim, dim, arma::fill::eye);
+    init_var *= init_var_;
+    mat ensemble = mvnrnd(init_ave, init_var, size);
+
+    // particle filter
+    std::cout<<"ready for particle filter\n";
+    auto particle = ParticleFilter(ensemble, lorenz96model, likehood, ob_list, sys_errors);
+    std::cout<<"particle filter ended\n";
+
+    // 后处理
+    mat assimilated(particle.size(), dim, arma::fill::none);
+
+    for(int i=0; i<particle.size(); i++){
+        vec temp(dim, arma::fill::zeros);
+        for(int j=0; j<particle[i].first.n_cols; j++){
+            temp += particle[i].first.col(j) * particle[i].second(j);
+        }
+        for(int j=0; j<dim; j++){
+            assimilated(i, j) = temp(j);
+        }
+    }
+    assimilated.save("./data/analysis.csv", arma::raw_ascii);
+}
+
 int main(int argc, char** argv){
     using namespace boost::program_options;
     using namespace config;
 
+    std::string problem;
+
     options_description cmd("lorenz96 EnKF");
+    cmd.add_options()("problem,p", value<std::string>(&problem)->default_value("ENKF"), "type: ENKF or Particle");
     cmd.add_options()("dim,d", value<int>(&dim)->default_value(40), "dimension of system");
     cmd.add_options()("ob_dim,o", value<int>(&ob_dim)->default_value(6), "ob dimension");
     cmd.add_options()("F,F", value<double>(&F)->default_value(8.0), "F");
     cmd.add_options()("ob_var,b", value<double>(&ob_var)->default_value(0.1), "ob_error");
-    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.01), "system_error");
+    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.0), "system_error");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
     cmd.add_options()("real_sys_var,r", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
     cmd.add_options()("select,s", value<int>(&select_every)->default_value(10), "select every");
@@ -192,9 +277,15 @@ int main(int argc, char** argv){
     store(parse_command_line(argc, argv, cmd), map);
     notify(map);
 
-    lorenz96EnKF();
+    arma::arma_rng::set_seed_random();
+    // lorenz63EnKF();
+    if(problem == "ENKF")
+        lorenz96EnKF();
+    else
+        lorenz96particle();
 
-    std::cout<<"dim: "<<dim<<'\n'
+    std::cout<<"problem type: "<<problem<<'\n'
+            <<"dim: "<<dim<<'\n'
             <<"ob_dim: "<<ob_dim<<'\n'
             <<"F: "<<F<<'\n'
             <<"init_var: "<<init_var_<<'\n'
