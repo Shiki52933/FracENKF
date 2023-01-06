@@ -255,8 +255,8 @@ int main(int argc, char** argv){
     cmd.add_options()("ob_var,o", value<double>(&ob_var)->default_value(0.1), "ob_error");
     cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.), "system_error");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
-    cmd.add_options()("real_sys_var,rs", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
-    cmd.add_options()("select,sl", value<int>(&select_every)->default_value(50), "select every");
+    cmd.add_options()("real_sys_var,y", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
+    cmd.add_options()("select,c", value<int>(&select_every)->default_value(50), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
     cmd.add_options()("time,t", value<double>(&max_time)->default_value(5), "max_time");
     
