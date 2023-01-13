@@ -234,14 +234,105 @@ void fracLorenz63EnKF(){
     kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
+void fracLorenz63EnKF_version2(){
+    // 参数
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    vec v0 = randn(3);
+    mat ref = generateFracLorenz63(config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
+    ref.save("./data/lorenz63.csv", arma::raw_ascii);
+    std::cout<<"reference solution okay\n";
+
+    mat H = arma::randn(2, 3);
+    auto H_ob = [&H](const mat& ensemble) -> mat {
+        // std::cout<<"ensemble n_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        if(ensemble.n_rows == 3){
+            return H * ensemble;
+        }else{
+            // std::cout<<"start multiplication\n";
+            mat real_time = ensemble.submat(0, 0, 2, ensemble.n_cols-1);
+            mat ret = H * real_time;
+            // std::cout<<"end multiplication\n";
+            return ret;
+        }
+    };
+    // mat temp = ref.t();
+    mat all_ob = H_ob(ref.t());
+    std::cout<<"all ob okay\n";
+    // 初始值
+    vec init_ave{0., 0., 0.};
+    mat init_var(3, 3, arma::fill::eye);
+    init_var *= init_var_;
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(2, 2, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    Errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(2,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    
+    Errors sys_errors;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    int ensemble_size = config::ensemble_size;
+
+    std::cout<<"ENKF ready\n";
+    config::window_length = 20000;
+    config::bino = compute_bino(config::derivative_orders, config::window_length);
+    auto ENKFResult = FStochasticENKF<3, 5>(ensemble_size, init_ave, init_var, ob_list, 
+        num_iter, ob_errors, ob_op, FracLorenz63Model, sys_errors, 0.1*arma::eye(15, 15));
+    std::vector<vec> analysis_ = ENKFResult;
+    // std::vector<double> skewness_ = std::get<1>(ENKFResult);
+    // std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
+    std::cout<<"ENKF okay\n";
+
+    arma::mat analysis(analysis_.size(), 3);
+    for(int i=0; i<analysis.n_rows; i++){
+        analysis(i, 0) = analysis_[i](0);
+        analysis(i, 1) = analysis_[i](1);
+        analysis(i, 2) = analysis_[i](2);
+    }
+    // arma::mat skewness(skewness_.size(), 1);
+    // arma::mat kurtosis(skewness_.size(), 1);
+    // for(int i=0; i<skewness.n_rows; i++){
+    //     skewness(i, 0) = skewness_[i];
+    //     kurtosis(i, 0) = kurtosis_[i];
+    // }
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+    // skewness.save("./data/skewness.csv", arma::raw_ascii);
+    // kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
+}
+
 int main(int argc, char** argv){
     using namespace boost::program_options;
     using namespace config;
 
+    int version = 1;
     std::string problem, sys_var_type;
 
     options_description cmd("Fractional lorenz63 EnKF");
     cmd.add_options()("problem,p", value<std::string>(&problem)->default_value("ENKF"), "type: ENKF or Particle");
+    cmd.add_options()("version,e", value<int>(&version)->default_value(1), "ENKF version");
     cmd.add_options()("sigma,s", value<double>(&sigma)->default_value(10), "sigma");
     cmd.add_options()("rho,r", value<double>(&rho)->default_value(28), "rho");
     cmd.add_options()("beta,b", value<double>(&beta)->default_value(8.0/3), "beta");
@@ -284,7 +375,10 @@ int main(int argc, char** argv){
     arma::arma_rng::set_seed_random();
     // lorenz63EnKF();
     if(problem == "ENKF")
-        fracLorenz63EnKF();
+        if(version == 1)
+            fracLorenz63EnKF();
+        else
+            fracLorenz63EnKF_version2();
     else
         throw("Not implemented yet");
 
@@ -299,5 +393,6 @@ int main(int argc, char** argv){
             <<"real_sys_var: "<<real_sys_var<<'\n'
             <<"select every: "<<select_every<<'\n'
             <<"ensemble size: "<<ensemble_size<<'\n'
-            <<"max time: "<<max_time<<'\n';
+            <<"max time: "<<max_time<<'\n'
+            <<"ENKF version: "<<version<<'\n';
 }

@@ -96,6 +96,79 @@ StochasticENKF(int ensembleSize, vec initAverage, mat initUncertainty, std::vect
     return std::tuple<std::vector<vec>, std::vector<double>, std::vector<double>>(res, skewnesses, kurtosises);
 }
 
+template<int state_dim, int time_dim, typename T, typename S>
+std::vector<vec> 
+FStochasticENKF(int ensembleSize, vec initAverage, mat initUncertainty, std::vector<vec>& obResults, 
+                int numIters, Errors& obErrors, T obOp, S model, Errors& sysErrors, mat inflation){
+    // 初始化
+    std::vector<vec> res;
+    // std::vector<double> skewnesses;
+    // std::vector<double> kurtosises;
+    mat ensemble = arma::mvnrnd(initAverage, initUncertainty, ensembleSize);
+
+    for(int i=0; i<numIters; i++){
+        std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols;
+        std::cout<<"\tstate dimension: "<<state_dim<<"\ttime dimension: "<<time_dim<<"\n";
+
+        // std::future<double> skewness = std::async(std::launch::deferred, compute_skewness, ensemble);
+        // skewnesses.push_back(compute_skewness(ensemble));
+        // std::future<double> kurtosis = std::async(std::launch::deferred, compute_kurtosis, ensemble);  
+        // kurtosises.push_back(compute_kurtosis(ensemble));
+
+        if(!obResults[i].is_empty()){
+            int obSize = obResults[i].size();
+            // 如果这个时刻有观测，则进行同化和修正
+            // 生成扰动后的观测
+            mat temp, perturb(obSize, ensembleSize, arma::fill::zeros);
+            if(arma::inv(temp, obErrors[i]))
+                perturb = arma::mvnrnd(vec(obSize, arma::fill::zeros), obErrors[i], ensembleSize);
+            mat afterPerturb = perturb.each_col() + obResults[i];
+
+            // 获取真正参与ENKF的部分
+            int last_row;
+            if(ensemble.n_rows <= state_dim * time_dim){
+                last_row = ensemble.n_rows;
+            }else{
+                last_row = state_dim * time_dim;
+            }
+
+            // 平均值
+            mat ensembleMean = mean(ensemble.submat(0,0,last_row-1,ensemble.n_cols-1), 1);
+            mat perturbMean = mean(perturb, 1);
+
+            // 为了符合算法说明，暂且用下划线
+            // 观测后集合
+            mat y_f = obOp(ensemble);
+            
+            mat x_f = (ensemble.submat(0,0,last_row-1,ensemble.n_cols-1).each_col() - ensembleMean) / sqrt(ensembleSize - 1);
+            mat y_mean = mean(y_f, 1);
+
+            mat auxiliary = afterPerturb - y_f;
+            temp = y_f - perturb;
+            y_f = (temp.each_col() - (y_mean - perturbMean)) / sqrt(ensembleSize - 1);
+
+            // 计算增益矩阵
+            mat gain = x_f * y_f.t() * pinv(y_f * y_f.t() + inflation.submat(0,0,y_f.n_rows-1,y_f.n_rows-1));
+            // 更新集合
+            ensemble.submat(0,0,last_row-1,ensemble.n_cols-1) += gain * auxiliary;
+        }else{
+            ensemble = ensemble;
+        }
+
+        // 储存结果
+        res.push_back(vec(mean(ensemble, 1)));
+
+        // 如果不是最后一步，就往前推进
+        if(i != numIters-1)
+            ensemble = model(ensemble, i, sysErrors[i]);
+
+        // skewnesses.push_back(skewness.get());
+        // kurtosises.push_back(kurtosis.get());
+    }
+
+    return res;
+}
+
 vec BAlpha(double alpha, int n){
     vec res(n+2, arma::fill::zeros);
     for(int i=1; i<n+2; i++){
