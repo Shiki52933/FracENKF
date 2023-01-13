@@ -57,7 +57,7 @@ mat generate_lorenz63(double sigma, double rho, double beta, double dt, double t
 
 namespace config{
     double sigma = 10, rho = 28, beta = 8.0/3;
-    double dt = 0.001, max_time=5;
+    double dt = 0.005, max_time=5;
 
     double ob_var = 1;
     double sys_var = 0.01, real_sys_var = 0.;
@@ -253,12 +253,12 @@ int main(int argc, char** argv){
     cmd.add_options()("rho,r", value<double>(&rho)->default_value(28), "rho");
     cmd.add_options()("beta,b", value<double>(&beta)->default_value(8.0/3), "beta");
     cmd.add_options()("ob_var,o", value<double>(&ob_var)->default_value(0.1), "ob_error");
-    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.), "system_error");
+    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.1), "system_error");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
-    cmd.add_options()("real_sys_var,y", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
-    cmd.add_options()("select,c", value<int>(&select_every)->default_value(50), "select every");
+    cmd.add_options()("real_sys_var,y", value<double>(&real_sys_var)->default_value(1), "real_system_error");
+    cmd.add_options()("select,c", value<int>(&select_every)->default_value(10), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
-    cmd.add_options()("time,t", value<double>(&max_time)->default_value(5), "max_time");
+    cmd.add_options()("time,t", value<double>(&max_time)->default_value(50), "max_time");
     
     variables_map map;
     store(parse_command_line(argc, argv, cmd), map);

@@ -204,7 +204,10 @@ void lorenz96particle(){
         vec ob_ = H * solid;
         // std::cout<<"enter likehood\n";
         vec misfit = ob_ - ob;
+        // std::cout<<"misfit:"<<misfit<<"\n";
         mat likehood = -1./2 * misfit.t() * error_ptr->i() * misfit;
+        std::cout<<"distance:"<<likehood<<"\t";
+        std::cout<<"likehood:"<<exp(likehood(0, 0))<<"\n";
         // std::cout<<"end likehood\n";
         return exp(likehood(0, 0));
     };

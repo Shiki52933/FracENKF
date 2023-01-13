@@ -9,7 +9,7 @@ using namespace arma;
 extern mat compute_bino(drowvec orders, int n);
 
 namespace config{
-    drowvec derivative_orders{0.995, 0.995, 0.995};
+    drowvec derivative_orders{1.1, 1.1, 1.1};
     int window_length = 10;
     mat bino = compute_bino(derivative_orders, window_length);
 
@@ -99,10 +99,17 @@ mat generateFracLorenz63(double dt, double max_time, vec v0, mat sys_var){
     mat result(iter_num+1, 3, arma::fill::none);
     result.row(0) = v0.t();
 
-    // 保存config::dt
+    // 保存config::dt和window
     double pre_dt = config::dt;
     config::dt = dt;
+    int pre_window = config::window_length;
+    mat pre_bino = config::bino;
+    int window = 20;
+    std::cin>>window;
+    config::window_length = window;
+    config::bino = compute_bino(config::derivative_orders, config::window_length);
 
+    std::cout<<"using window length "<<config::window_length<<" to generate reference solution\n";
     for(int i=1; i<iter_num+1; i++){
         if(i * dt <= max_time){
             // 这里是正常的dt
@@ -115,8 +122,10 @@ mat generateFracLorenz63(double dt, double max_time, vec v0, mat sys_var){
         }
     }
 
-    // 恢复config::dt
+    // 恢复config::dt和Window
     config::dt = pre_dt;
+    config::window_length = pre_window;
+    config::bino = pre_bino;
 
     return result;
 }
@@ -236,12 +245,13 @@ int main(int argc, char** argv){
     cmd.add_options()("sigma,s", value<double>(&sigma)->default_value(10), "sigma");
     cmd.add_options()("rho,r", value<double>(&rho)->default_value(28), "rho");
     cmd.add_options()("beta,b", value<double>(&beta)->default_value(8.0/3), "beta");
+    cmd.add_options()("window,w", value<int>(&window_length)->default_value(10), "window length");
     cmd.add_options()("ob_var,o", value<double>(&ob_var)->default_value(0.1), "ob_error");
     cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.1), "system_error");
-    cmd.add_options()("sys_var_type,y", value<std::string>(&sys_var_type)->default_value("null"), "system_error_type");
+    cmd.add_options()("sys_var_type,y", value<std::string>(&sys_var_type)->default_value("real"), "system_error_type");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
-    cmd.add_options()("real_sys_var,rs", value<double>(&real_sys_var)->default_value(0.), "real_system_error");
-    cmd.add_options()("select,sl", value<int>(&select_every)->default_value(10), "select every");
+    cmd.add_options()("real_sys_var,a", value<double>(&real_sys_var)->default_value(1), "real_system_error");
+    cmd.add_options()("select,l", value<int>(&select_every)->default_value(10), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
     cmd.add_options()("time,t", value<double>(&max_time)->default_value(50), "max_time");
     
@@ -259,6 +269,8 @@ int main(int argc, char** argv){
     config::select_every = map["select every"].as<int>();
     config::ensemble_size = map["ensemble size"].as<int>();
 */ 
+
+    bino = compute_bino(derivative_orders, window_length);
 
     if(sys_var_type == "real")
         sys_var_ptr = addRealTime;
