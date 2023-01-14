@@ -10,7 +10,7 @@ extern mat compute_bino(drowvec orders, int n);
 
 namespace config{
     drowvec derivative_orders{1.1, 1.1, 1.1};
-    int window_length = 10;
+    int window_length = 100000;
     mat bino = compute_bino(derivative_orders, window_length);
 
     double sigma = 10., rho = 28., beta = 8./3, dt = 0.005, max_time;
@@ -69,6 +69,7 @@ mat FracLorenz63Model(const mat& ensemble, int idx, mat sys_var){
     rhs.row(0) = config::sigma * (ensemble.row(1) - ensemble.row(0)); 
     rhs.row(1) = ensemble.row(0) % (config::rho - ensemble.row(2)) - ensemble.row(1);
     rhs.row(2) = ensemble.row(0) % ensemble.row(1) - config::beta * ensemble.row(2);
+    config::addAllTime(rhs, sys_var);
 
     for(int i=0; i<dim; i++){
         rhs.row(i) *= pow(config::dt, config::derivative_orders[i]);
@@ -78,15 +79,15 @@ mat FracLorenz63Model(const mat& ensemble, int idx, mat sys_var){
         mat ret(dim*(window+1), ensemble.n_cols, arma::fill::none);
         ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - fracDirivative;
         ret.submat(dim,0,ret.n_rows-1,ret.n_cols-1) = ensemble;
-        if(config::sys_var_ptr)
-            config::sys_var_ptr(ret, sys_var);
+        // if(config::sys_var_ptr)
+        //     config::sys_var_ptr(ret, sys_var);
         return ret;
     }else{
         mat ret(ensemble.n_rows, ensemble.n_cols, arma::fill::none);
         ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - fracDirivative;
         ret.submat(dim,0,ret.n_rows-1,ret.n_cols-1) = ensemble.submat(0,0,ensemble.n_rows-dim-1,ensemble.n_cols-1);
-        if(config::sys_var_ptr)
-            config::sys_var_ptr(ret, sys_var);
+        // if(config::sys_var_ptr)
+        //     config::sys_var_ptr(ret, sys_var);
         return ret;
     }
 }
@@ -103,13 +104,9 @@ mat generateFracLorenz63(double dt, double max_time, vec v0, mat sys_var){
     double pre_dt = config::dt;
     config::dt = dt;
     int pre_window = config::window_length;
-    mat pre_bino = config::bino;
-    int window = 20;
-    std::cin>>window;
-    config::window_length = window;
-    config::bino = compute_bino(config::derivative_orders, config::window_length);
+    config::window_length = INT_MAX;
 
-    std::cout<<"using window length "<<config::window_length<<" to generate reference solution\n";
+    // std::cout<<"using window length "<<config::window_length<<" to generate reference solution\n";
     for(int i=1; i<iter_num+1; i++){
         if(i * dt <= max_time){
             // 这里是正常的dt
@@ -125,7 +122,6 @@ mat generateFracLorenz63(double dt, double max_time, vec v0, mat sys_var){
     // 恢复config::dt和Window
     config::dt = pre_dt;
     config::window_length = pre_window;
-    config::bino = pre_bino;
 
     return result;
 }
@@ -296,9 +292,9 @@ void fracLorenz63EnKF_version2(){
     int ensemble_size = config::ensemble_size;
 
     std::cout<<"ENKF ready\n";
-    config::window_length = 20000;
-    config::bino = compute_bino(config::derivative_orders, config::window_length);
-    auto ENKFResult = FStochasticENKF<3, 5>(ensemble_size, init_ave, init_var, ob_list, 
+    config::window_length = INT_MAX;
+    // config::bino = compute_bino(config::derivative_orders, config::window_length);
+    auto ENKFResult = FStochasticENKF<3, 10>(ensemble_size, init_ave, init_var, ob_list, 
         num_iter, ob_errors, ob_op, FracLorenz63Model, sys_errors, 0.1*arma::eye(15, 15));
     std::vector<vec> analysis_ = ENKFResult;
     // std::vector<double> skewness_ = std::get<1>(ENKFResult);
@@ -338,7 +334,7 @@ int main(int argc, char** argv){
     cmd.add_options()("beta,b", value<double>(&beta)->default_value(8.0/3), "beta");
     cmd.add_options()("window,w", value<int>(&window_length)->default_value(10), "window length");
     cmd.add_options()("ob_var,o", value<double>(&ob_var)->default_value(0.1), "ob_error");
-    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.1), "system_error");
+    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(5), "system_error");
     cmd.add_options()("sys_var_type,y", value<std::string>(&sys_var_type)->default_value("real"), "system_error_type");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
     cmd.add_options()("real_sys_var,a", value<double>(&real_sys_var)->default_value(1), "real_system_error");
@@ -361,7 +357,7 @@ int main(int argc, char** argv){
     config::ensemble_size = map["ensemble size"].as<int>();
 */ 
 
-    bino = compute_bino(derivative_orders, window_length);
+    // bino = compute_bino(derivative_orders, window_length);
 
     if(sys_var_type == "real")
         sys_var_ptr = addRealTime;

@@ -148,7 +148,8 @@ FStochasticENKF(int ensembleSize, vec initAverage, mat initUncertainty, std::vec
             y_f = (temp.each_col() - (y_mean - perturbMean)) / sqrt(ensembleSize - 1);
 
             // 计算增益矩阵
-            mat gain = x_f * y_f.t() * pinv(y_f * y_f.t() + inflation.submat(0,0,y_f.n_rows-1,y_f.n_rows-1));
+            temp = y_f * y_f.t() + inflation.submat(0,0,y_f.n_rows-1,y_f.n_rows-1);
+            mat gain = x_f * y_f.t() * inv(temp);
             // 更新集合
             ensemble.submat(0,0,last_row-1,ensemble.n_cols-1) += gain * auxiliary;
         }else{
