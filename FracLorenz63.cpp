@@ -9,7 +9,7 @@ using namespace arma;
 extern mat compute_bino(drowvec orders, int n);
 
 namespace config{
-    drowvec derivative_orders{1.1, 1.1, 1.1};
+    drowvec derivative_orders = randn<drowvec>(3, distr_param(1., 1e-1));
     int window_length = 100000;
     mat bino = compute_bino(derivative_orders, window_length);
 

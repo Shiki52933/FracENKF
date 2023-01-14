@@ -5,6 +5,10 @@ sol = np.loadtxt("./data/lorenz96.csv")
 skewness = np.loadtxt("./data/skewness.csv")
 kurtosis = np.loadtxt("./data/kurtosis.csv")
 
+plt.plot(range(len(sol)), sol[:, 0])
+plt.title("first component")
+plt.show()
+
 plt.plot(range(len(sol)), sol[:, -1])
 plt.title("last component")
 plt.show()
