@@ -9,8 +9,10 @@
 #include <memory>
 #include <math.h>
 
-using arma::mat;
 using arma::vec;
+using arma::drowvec;
+using arma::mat;
+using arma::sp_mat;
 
 class Errors{
     std::vector<std::shared_ptr<mat>> mPtrs;
@@ -222,4 +224,16 @@ double compute_kurtosis(const mat& ensemble){
     kurtosis -= (ensembleSize - 1) / (ensembleSize + 1) * p * (p + 2);
     kurtosis /= sqrt(8.0 / ensembleSize * p * (p + 2));
     return kurtosis;
+}
+
+mat compute_bino(drowvec orders, int n){
+    mat bino(n+1, orders.n_cols, arma::fill::none);
+    
+    bino.row(0) = drowvec(orders.n_cols, arma::fill::ones);
+    // std::cout<<"compute okay\n";
+    for(int i=1; i<n+1; i++){
+        bino.row(i) = (1. - (1. + orders) / i ) % bino.row(i-1);
+    }
+
+    return bino;
 }
