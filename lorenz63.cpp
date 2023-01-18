@@ -1,5 +1,6 @@
 #include "StochasticENKF.hpp"
 #include "ParticleFilter.hpp"
+#include "3DVar.hpp"
 #include <armadillo>
 #include <iostream>
 #include <boost/program_options.hpp>
@@ -164,6 +165,66 @@ void lorenz63EnKF(){
     kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
+void lorenz63_3DVar(){
+    // 参数
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    mat ref = generate_lorenz63(config::sigma, config::rho, config::beta, config::dt, config::max_time, vec{2,2,2}, *sys_error_ptr*config::real_sys_var);
+    
+    mat H = arma::randn(2, 3);
+    auto H_ob = [&H](const mat& ensemble){
+        return H * ensemble;
+    };
+    mat all_ob = H_ob(ref);
+    // 初始值
+    vec init_ave{0., 0., 0.};
+    mat init_var(3, 3, arma::fill::eye);
+    init_var *= init_var_;
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(2, 2, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    Errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(2,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    //std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    
+    Errors sys_errors;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    int ensemble_size = config::ensemble_size;
+    auto ThreeDVarResult = ThreeDVar(3, 1, init_ave, *sys_error_ptr, H, ob_list, ob_errors, model, sys_errors);
+    std::vector<vec>& analysis_ = ThreeDVarResult;
+    std::cout<<"ENKF okay\n";
+
+    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
+    for(int i=0; i<analysis.n_rows; i++){
+        analysis(i, 0) = analysis_[i](0);
+        analysis(i, 1) = analysis_[i](1);
+        analysis(i, 2) = analysis_[i](2);
+    }
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+}
+
 void lorenz63particle(){
     // 参数
     double ob_var = config::ob_var;
@@ -278,8 +339,12 @@ int main(int argc, char** argv){
     // lorenz63EnKF();
     if(problem == "ENKF")
         lorenz63EnKF();
-    else
+    else if(problem == "particle")
         lorenz63particle();
+    else if(problem == "3d-var")
+        lorenz63_3DVar();
+    else
+        throw std::runtime_error("not supported filter algorithm");
 
     std::cout<<"problem type: "<<problem<<'\n'
             <<"sigma: "<<sigma<<'\n'

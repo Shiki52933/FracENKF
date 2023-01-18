@@ -26,7 +26,7 @@ namespace config{
     double t_max = 200;
 
     int window_length = 10;
-    drowvec orders = randn<drowvec>(dim, distr_param(1., 1e-1));
+    drowvec orders = randn<drowvec>(dim, distr_param(0.8, 1e-1));
     mat bino = compute_bino(orders, (int)200/dt);
 
     double ob_var = 0.01;
@@ -305,12 +305,15 @@ void fracLorenz96EnKF_version2(){
     // std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
     std::cout<<"ENKF okay\n";
 
+    // mat analysis = arma::reshape(analysis_.back(), dim, analysis_.size()).t();
+    // analysis = arma::reverse(analysis);
     arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
     for(int i=0; i<analysis.n_rows; i++){
         for(int j=0; j<dim; j++){
             analysis(i, j) = analysis_[i](j);
         }
     }
+
     // arma::mat skewness(skewness_.size(), 1);
     // arma::mat kurtosis(skewness_.size(), 1);
     // for(int i=0; i<skewness.n_rows; i++){

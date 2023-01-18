@@ -1,5 +1,6 @@
 #include "StochasticENKF.hpp"
 #include "ParticleFilter.hpp"
+#include "3DVar.hpp"
 #include <utility>
 #include <exception>
 #include <boost/program_options.hpp>
@@ -301,6 +302,99 @@ void fracLorenz63EnKF_version2(){
     // std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
     std::cout<<"ENKF okay\n";
 
+    mat analysis = arma::reshape(analysis_.back(), 3, analysis_.size()).t();
+    analysis = arma::reverse(analysis);
+    // arma::mat analysis(analysis_.size(), 3);
+    // for(int i=0; i<analysis.n_rows; i++){
+    //     analysis(i, 0) = analysis_[i](0);
+    //     analysis(i, 1) = analysis_[i](1);
+    //     analysis(i, 2) = analysis_[i](2);
+    // }
+
+    // arma::mat skewness(skewness_.size(), 1);
+    // arma::mat kurtosis(skewness_.size(), 1);
+    // for(int i=0; i<skewness.n_rows; i++){
+    //     skewness(i, 0) = skewness_[i];
+    //     kurtosis(i, 0) = kurtosis_[i];
+    // }
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+    // skewness.save("./data/skewness.csv", arma::raw_ascii);
+    // kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
+}
+
+void fracLorenz63EnKF_3DVar(){
+    // 参数
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    vec v0 = randn(3);
+    mat ref = generateFracLorenz63(config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
+    ref.save("./data/lorenz63.csv", arma::raw_ascii);
+    std::cout<<"reference solution okay\n";
+
+    mat H = arma::randn(2, 3);
+    auto H_ob = [&H](const mat& ensemble) -> mat {
+        // std::cout<<"ensemble n_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        if(ensemble.n_rows == 3){
+            return H * ensemble;
+        }else{
+            // std::cout<<"start multiplication\n";
+            mat real_time = ensemble.submat(0, 0, 2, ensemble.n_cols-1);
+            mat ret = H * real_time;
+            // std::cout<<"end multiplication\n";
+            return ret;
+        }
+    };
+    // mat temp = ref.t();
+    mat all_ob = H_ob(ref.t());
+    std::cout<<"all ob okay\n";
+    // 初始值
+    vec init_ave{0., 0., 0.};
+    mat init_var(3, 3, arma::fill::eye);
+    init_var *= init_var_;
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(2, 2, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    Errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(2,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    
+    Errors sys_errors;
+    *sys_error_ptr *= 0;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    int ensemble_size = config::ensemble_size;
+
+    std::cout<<"ENKF ready\n";
+    config::window_length = INT_MAX;
+    // config::bino = compute_bino(config::derivative_orders, config::window_length);
+    auto ENKFResult = ThreeDVar(3, 1, init_ave+1, 
+        0.01*arma::eye(15,15), H, ob_list, ob_errors, FracLorenz63Model, sys_errors);
+    std::vector<vec> analysis_ = ENKFResult;
+    // std::vector<double> skewness_ = std::get<1>(ENKFResult);
+    // std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
+    std::cout<<"ENKF okay\n";
+
     arma::mat analysis(analysis_.size(), 3);
     for(int i=0; i<analysis.n_rows; i++){
         analysis(i, 0) = analysis_[i](0);
@@ -375,6 +469,8 @@ int main(int argc, char** argv){
             fracLorenz63EnKF();
         else
             fracLorenz63EnKF_version2();
+    else if(problem == "3d-var")
+        fracLorenz63EnKF_3DVar();
     else
         throw("Not implemented yet");
 
@@ -390,5 +486,6 @@ int main(int argc, char** argv){
             <<"select every: "<<select_every<<'\n'
             <<"ensemble size: "<<ensemble_size<<'\n'
             <<"max time: "<<max_time<<'\n'
-            <<"ENKF version: "<<version<<'\n';
+            <<"ENKF version: "<<version<<'\n'
+            <<"orders: "<<derivative_orders<<"\n";
 }
