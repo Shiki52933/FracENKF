@@ -66,7 +66,7 @@ mat fEKF(int state_dim, drowvec orders, double h,
         mat new_P = F * P_f * F.t() + gammas[1] * P_f * F.t() + 
             F * P_f * gammas[1].t() + mat_h * sys_vars[i] * mat_h.t();
         for(int j=1; j<=i+1; j++){
-            new_P += gammas[j] * former_vars[i+1-j];
+            new_P += gammas[j] * former_vars[i+1-j] * gammas[j].t();
         }
         if(i != iter_num-1)
             former_vars.push_back(new_P);
