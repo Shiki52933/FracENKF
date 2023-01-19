@@ -68,6 +68,8 @@ mat fUKF(
         var_weight(0) = lambda / (state_dim + lambda) + 1. - alpha * alpha + beta;
         // 然后通过模型,模型不要噪声
         mat prediction = rhs(ensemble);
+        prediction = mat_h * prediction;
+        prediction.each_col([&](vec& col){col += gammas[1] * result.row(i).t();}); 
         // 然后计算方差和协方差
         vec new_mean(state_dim, arma::fill::zeros);
         for(int j=0; j<2*state_dim+1; j++)
@@ -77,25 +79,23 @@ mat fUKF(
         for(int j=0; j<2*state_dim+1; j++){
             new_var += var_weight(j) * (prediction.col(j) - new_mean) * (prediction.col(j) - new_mean).t();
         }
-        new_var += sys_vars[i];
+        new_var += mat_h * sys_vars[i] * mat_h.t();
 
-        mat co_var(state_dim, state_dim, arma::fill::zeros);
-        for(int j=0; j<2*state_dim+1; j++){
-            co_var += var_weight(j) * (ensemble.col(j) - ensemble.col(0)) * 
-                (prediction.col(j) - new_mean).t();
-        }
-
-        // new_var = (new_var + new_var.t()) / 2.;
-        co_var = mat_h * co_var;
+        // mat co_var(state_dim, state_dim, arma::fill::zeros);
+        // for(int j=0; j<2*state_dim+1; j++){
+        //     co_var += var_weight(j) * (ensemble.col(j) - ensemble.col(0)) * 
+        //         (prediction.col(j) - new_mean).t();
+        // }
+        // co_var = mat_h * co_var;
 
         // 然后计算均值和方差
-        vec real_new_mean = mat_h * new_mean;
-        for(int j=1; j<=i+1; j++)
+        vec real_new_mean = new_mean;
+        for(int j=2; j<=i+1; j++)
             real_new_mean -= pow(-1, j) * gammas[j] * (result.row(i+1-j).t());
 
-        mat real_new_var = mat_h * new_var * (mat_h.t());
-        real_new_var += gammas[1] * co_var + co_var.t() * gammas[1].t();
-        for(int j=1; j<=i+1; j++){
+        mat real_new_var = new_var;
+        // real_new_var += gammas[1] * co_var + co_var.t() * gammas[1].t();
+        for(int j=2; j<=i+1; j++){
             real_new_var += gammas[j] * former_vars[i+1-j] * gammas[j].t();
         }
 
