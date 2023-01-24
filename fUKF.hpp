@@ -6,7 +6,7 @@ mat fUKF(
     int state_dim, drowvec orders, double h,
     vec init_mean, mat init_var,
     const mat& H, std::vector<vec> ob_list, Errors ob_errs,
-    T rhs, Errors sys_vars
+    T rhs, Errors sys_vars, mat inflation
 ){
     double lambda = alpha * alpha * (state_dim + k) - state_dim;
     // if(lambda < 0)
@@ -40,9 +40,10 @@ mat fUKF(
         if(!ob_list[i].is_empty()){
             // 更新均值和方差
             vec mean = result.row(i).t();
-            mat var = former_vars[i];
+            mat var = former_vars[i] + inflation;
 
             mat gain = var * H.t() * arma::inv(H * var * H.t() + ob_errs[i]);
+            std::cout<<"error in observation: "<<arma::norm(ob_list[i] - H * mean)<<"\n";
             mean += gain * (ob_list[i] - H * mean);
             var = (arma::eye(gain.n_rows, gain.n_rows) - gain * H) * var;
 
@@ -54,7 +55,7 @@ mat fUKF(
 
         // 首先取sigma点
         mat temp = (state_dim+lambda) * former_vars[i];
-        std::cout<<temp<<"\n";
+        std::cout<<"trace of variance: "<<arma::trace(temp)<<"\n";
         mat deviations = arma::chol(temp, "lower");
 
         mat ensemble(state_dim, 2*state_dim+1, arma::fill::none);
@@ -70,6 +71,7 @@ mat fUKF(
         mat prediction = rhs(ensemble);
         prediction = mat_h * prediction;
         prediction.each_col([&](vec& col){col += gammas[1] * result.row(i).t();}); 
+
         // 然后计算方差和协方差
         vec new_mean(state_dim, arma::fill::zeros);
         for(int j=0; j<2*state_dim+1; j++)
@@ -80,6 +82,7 @@ mat fUKF(
             new_var += var_weight(j) * (prediction.col(j) - new_mean) * (prediction.col(j) - new_mean).t();
         }
         new_var += mat_h * sys_vars[i] * mat_h.t();
+        // std::cout<<"trace of new variance: "<<arma::trace(new_var)<<"\n";
 
         // mat co_var(state_dim, state_dim, arma::fill::zeros);
         // for(int j=0; j<2*state_dim+1; j++){

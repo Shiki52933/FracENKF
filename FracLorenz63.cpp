@@ -465,7 +465,7 @@ void fracLorenz63UKf(){
         3, config::derivative_orders, config::dt,
         init_ave, init_var,
         H, ob_list, ob_errors,
-        lorenz63rhs, sys_errors);
+        lorenz63rhs, sys_errors, 0.1*arma::eye(3,3));
     mat& analysis = ENKFResult;
     std::cout<<"UKF okay\n";
 
