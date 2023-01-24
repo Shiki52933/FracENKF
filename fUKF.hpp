@@ -1,12 +1,14 @@
 #include "StochasticENKF.hpp"
 
+namespace shiki{
+
 template<typename T>
 mat fUKF(
     double alpha, double beta, double k,
     int state_dim, drowvec orders, double h,
     vec init_mean, mat init_var,
-    const mat& H, std::vector<vec> ob_list, Errors ob_errs,
-    T rhs, Errors sys_vars, mat inflation
+    std::vector<vec> ob_list, const mat& H, errors ob_errs,
+    T rhs, errors sys_vars, mat inflation
 ){
     double lambda = alpha * alpha * (state_dim + k) - state_dim;
     // if(lambda < 0)
@@ -84,31 +86,15 @@ mat fUKF(
         new_var += mat_h * sys_vars[i] * mat_h.t();
         // std::cout<<"trace of new variance: "<<arma::trace(new_var)<<"\n";
 
-        // mat co_var(state_dim, state_dim, arma::fill::zeros);
-        // for(int j=0; j<2*state_dim+1; j++){
-        //     co_var += var_weight(j) * (ensemble.col(j) - ensemble.col(0)) * 
-        //         (prediction.col(j) - new_mean).t();
-        // }
-        // co_var = mat_h * co_var;
-
         // 然后计算均值和方差
         vec real_new_mean = new_mean;
         for(int j=2; j<=i+1; j++)
             real_new_mean -= pow(-1, j) * gammas[j] * (result.row(i+1-j).t());
 
         mat real_new_var = new_var;
-        // real_new_var += gammas[1] * co_var + co_var.t() * gammas[1].t();
         for(int j=2; j<=i+1; j++){
             real_new_var += gammas[j] * former_vars[i+1-j] * gammas[j].t();
         }
-
-        // real_new_var = (real_new_var + real_new_var.t()) / 2.;
-        // if(!real_new_var.is_symmetric()){
-            // std::cout<<real_new_var<<"\n"<<new_var<<"\n";
-        //     // real_new_var = (real_new_var + real_new_var.t()) / 2.;
-        //     std::cout<<real_new_var<<"\n"<<new_var<<"\n";
-        //     throw std::runtime_error("not symmetric variance");
-        // }
 
         if(i != iter_num-1){
             result.row(i+1) = real_new_mean.t();
@@ -117,4 +103,6 @@ mat fUKF(
     }
 
     return result;
+}
+
 }

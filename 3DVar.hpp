@@ -3,15 +3,14 @@
 #include <vector>
 #include "StochasticENKF.hpp"
 
-using arma::vec;
-using arma::mat;
+namespace shiki{
 
 template<typename T>
 std::vector<vec> 
-ThreeDVar(int state_num, int time_window, 
+var_3d(int state_num, int time_window, 
     vec mean, mat variance, 
-    mat ob_op, std::vector<vec> ob_lists, Errors ob_vars, 
-    T model, Errors sys_vars){
+    mat ob_op, std::vector<vec> ob_lists, errors ob_vars, 
+    T model, errors sys_vars){
     std::vector<vec> results;
     int iter_num = ob_lists.size();
 
@@ -37,4 +36,6 @@ ThreeDVar(int state_num, int time_window,
     }
 
     return results;
+}
+
 }

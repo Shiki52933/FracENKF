@@ -5,30 +5,30 @@
 #include <vector>
 #include "StochasticENKF.hpp"
 
-using arma::vec;
-using arma::mat;
-using arma::drowvec;
+namespace shiki{
 
 extern std::pair<vec, mat> compute_mean_variance(const mat& ensemble, const vec& weights);
 
 
-template<typename Model, typename Ob>
+template<typename T, typename S>
 std::vector< std::pair<mat, vec> >
-ParticleFilter(mat ensemble, Model model, Ob likehood, std::vector<vec> obResults, Errors sys_vars){
-    int num_iter = obResults.size();
+particle_filter(
+    mat ensemble, T model, S likelihood, std::vector<vec> ob_results, errors sys_vars
+    ){
+    int num_iter = ob_results.size();
     int ensemble_size = ensemble.n_cols;
     std::vector< std::pair<mat, vec> > results{};
     vec weights(ensemble_size, arma::fill::value(1./ensemble_size));
 
     for(int i=0; i<num_iter; i++){
-        if(obResults[i].empty()){
+        if(ob_results[i].empty()){
             // 空的观测，不更新权重，只是推进模型
             results.push_back({ensemble, weights});
         }else{
             // 有观测，需要更新权重
             double sum = 0;
             for(int j=0; j<ensemble_size; j++){
-                weights[j] = weights[j] * likehood(ensemble.col(j), obResults[i]);
+                weights[j] = weights[j] * likelihood(ensemble.col(j), ob_results[i]);
                 sum += weights[j];
             }
             std::cout<<"sum="<<sum<<"\nformer min weight=\n"<<min(weights)<<"\n";
@@ -58,14 +58,6 @@ std::pair<vec, mat> compute_mean_variance(const mat& ensemble, const vec& weight
         vec deviation = ensemble.col(j) - mean;
         drowvec transpose = deviation.t();
         mat one_ensemble =  deviation * transpose;
-        // std::cout<<deviation.n_rows<<'\t'<<deviation.n_cols<<'\n';
-        // std::cout<<transpose.n_rows<<'\t'<<transpose.n_cols<<'\n';
-        // std::cout<<one_ensemble.n_rows<<'\t'<<one_ensemble.n_cols<<'\n';
-        // std::cout<<deviation<<'\n';
-        // std::cout<<transpose<<'\n';
-        // std::cout<<one_ensemble<<'\n';
-        // if(!one_ensemble.is_symmetric())
-        //     throw std::runtime_error("one ensemble variance not symmetric");
         var += weights(j) * one_ensemble;
     }
 
@@ -75,3 +67,4 @@ std::pair<vec, mat> compute_mean_variance(const mat& ensemble, const vec& weight
     return std::pair{mean, var};
 }
 
+}

@@ -8,6 +8,7 @@
 #include <boost/program_options.hpp>
 
 using namespace arma;
+using namespace shiki;
 
 namespace config{
     drowvec derivative_orders = randn<drowvec>(3, distr_param(1., 1e-1));
@@ -192,7 +193,7 @@ void fracLorenz63EnKF(){
     *error_ptr *= ob_var;
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
 
     for(int i=0; i<all_ob.n_cols; i++){
         // std::cout<<"in for\n";
@@ -206,7 +207,7 @@ void fracLorenz63EnKF(){
     // 迭代次数
     int num_iter = ob_list.size();
     
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
     
@@ -278,7 +279,7 @@ void fracLorenz63EnKF_version2(){
     *error_ptr *= ob_var;
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
 
     for(int i=0; i<all_ob.n_cols; i++){
         // std::cout<<"in for\n";
@@ -292,7 +293,7 @@ void fracLorenz63EnKF_version2(){
     // 迭代次数
     int num_iter = ob_list.size();
     
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
     
@@ -370,7 +371,7 @@ void fracLorenz63EKf(){
     *error_ptr *= ob_var;
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
 
     for(int i=0; i<all_ob.n_cols; i++){
         // std::cout<<"in for\n";
@@ -384,7 +385,7 @@ void fracLorenz63EKf(){
     // 迭代次数
     int num_iter = ob_list.size();
     
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
     
@@ -441,7 +442,7 @@ void fracLorenz63UKf(){
     *error_ptr *= ob_var;
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
 
     for(int i=0; i<all_ob.n_cols; i++){
         // std::cout<<"in for\n";
@@ -455,7 +456,7 @@ void fracLorenz63UKf(){
     // 迭代次数
     int num_iter = ob_list.size();
     
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
     
@@ -513,7 +514,7 @@ void fracLorenz63EnKF_3DVar(){
     *error_ptr *= ob_var;
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
 
     for(int i=0; i<all_ob.n_cols; i++){
         // std::cout<<"in for\n";
@@ -527,7 +528,7 @@ void fracLorenz63EnKF_3DVar(){
     // 迭代次数
     int num_iter = ob_list.size();
     
-    Errors sys_errors;
+    errors sys_errors;
     *sys_error_ptr *= 0;
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
@@ -537,7 +538,7 @@ void fracLorenz63EnKF_3DVar(){
     std::cout<<"ENKF ready\n";
     config::window_length = INT_MAX;
     // config::bino = compute_bino(config::derivative_orders, config::window_length);
-    auto ENKFResult = ThreeDVar(3, 1, init_ave+1, 
+    auto ENKFResult = var_3d(3, 1, init_ave+1, 
         0.01*arma::eye(15,15), H, ob_list, ob_errors, FracLorenz63Model, sys_errors);
     std::vector<vec> analysis_ = ENKFResult;
     // std::vector<double> skewness_ = std::get<1>(ENKFResult);

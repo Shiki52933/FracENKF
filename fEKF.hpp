@@ -2,13 +2,17 @@
 #include <vector>
 #include <memory>
 
-typedef mat (*Linearize)(vec);
+namespace shiki{
+
+typedef mat (*linearize)(vec);
 
 template<typename T>
-mat fEKF(int state_dim, drowvec orders, double h,
-        vec init_mean, mat init_var, 
-        const mat& H, std::vector<vec> ob_list, Errors ob_errs, 
-        T model, Linearize modelLinear, Errors sys_vars){
+mat fEKF(
+    int state_dim, drowvec orders, double h,
+    vec init_mean, mat init_var, 
+    std::vector<vec> ob_list, const mat& H, errors ob_errs, 
+    T model, linearize modelLinear, errors sys_vars
+    ){
     int iter_num = ob_list.size();
 
     // 保存同化结果和协方差矩阵
@@ -75,3 +79,4 @@ mat fEKF(int state_dim, drowvec orders, double h,
     return result;
 }
 
+}
