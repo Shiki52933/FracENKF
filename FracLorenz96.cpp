@@ -1,21 +1,28 @@
 #include "StochasticENKF.hpp"
 #include "ParticleFilter.hpp"
+#include "fEKF.hpp"
 
 #include <iostream>
 #include <boost/program_options.hpp>
 
 using namespace arma;
 
-mat compute_bino(drowvec orders, int n){
-    mat bino(n+1, orders.n_cols, arma::fill::none);
-    
-    bino.row(0) = drowvec(orders.n_cols, arma::fill::ones);
-    // std::cout<<"compute okay\n";
-    for(int i=1; i<n+1; i++){
-        bino.row(i) = (1. - (1. + orders) / i ) % bino.row(i-1);
+
+mat lorenz96Linearize(vec mean){
+    int dim = mean.n_rows;
+    mat derivative(dim, dim, arma::fill::zeros);
+    for(int i=0; i<dim; i++){
+        int pre = (i + dim - 1) % dim;
+        int far = (i + dim - 2) % dim;
+        int next = (i + 1) % dim;
+
+        derivative(i, far) = -mean(pre);
+        derivative(i, pre) = mean(next) - mean(far);
+        derivative(i, i) = -1;
+        derivative(i, next) = mean(pre);
     }
 
-    return bino;
+    return derivative;
 }
 
 namespace config{
@@ -305,14 +312,14 @@ void fracLorenz96EnKF_version2(){
     // std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
     std::cout<<"ENKF okay\n";
 
-    // mat analysis = arma::reshape(analysis_.back(), dim, analysis_.size()).t();
-    // analysis = arma::reverse(analysis);
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    for(int i=0; i<analysis.n_rows; i++){
-        for(int j=0; j<dim; j++){
-            analysis(i, j) = analysis_[i](j);
-        }
-    }
+    mat analysis = arma::reshape(analysis_.back(), dim, analysis_.size()).t();
+    analysis = arma::reverse(analysis);
+    // arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
+    // for(int i=0; i<analysis.n_rows; i++){
+    //     for(int j=0; j<dim; j++){
+    //         analysis(i, j) = analysis_[i](j);
+    //     }
+    // }
 
     // arma::mat skewness(skewness_.size(), 1);
     // arma::mat kurtosis(skewness_.size(), 1);
@@ -324,6 +331,81 @@ void fracLorenz96EnKF_version2(){
     analysis.save("./data/analysis.csv", arma::raw_ascii);
     // skewness.save("./data/skewness.csv", arma::raw_ascii);
     // kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
+}
+
+void fracLorenz96EKf(){
+    // 参数
+    int dim = config::dim;
+    int ob_dim = config::ob_dim;
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    vec v0 = randn(dim);
+    mat ref = generate_frac_lorenz96(
+        v0, config::F, config::t_max, config::dt, *sys_error_ptr
+        );
+    ref.save("./data/lorenz96.csv", arma::raw_ascii);
+    std::cout<<"reference solution okay\n";
+
+    mat H = arma::randn(ob_dim, dim);
+    auto H_ob = [&H, &dim](const mat& ensemble) -> mat {
+        // std::cout<<"ensemble n_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        if(ensemble.n_rows == dim){
+            return H * ensemble;
+        }else{
+            // std::cout<<"start multiplication\n";
+            mat real_time = ensemble.submat(0, 0, dim-1, ensemble.n_cols-1);
+            mat ret = H * real_time;
+            // std::cout<<"end multiplication\n";
+            return ret;
+        }
+    };
+    // mat temp = ref.t();
+    mat all_ob = H_ob(ref.t());
+    std::cout<<"all ob okay\n";
+    // 初始值
+    vec init_ave(dim, arma::fill::zeros);
+    mat init_var(dim, dim, arma::fill::eye);
+    init_var *= init_var_;
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    Errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    
+    Errors sys_errors;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    std::cout<<"EKF ready\n";
+    // config::bino = compute_bino(config::derivative_orders, config::window_length);
+    auto ENKFResult = fEKF(dim, config::orders, config::dt,
+        init_ave, init_var,
+        H, ob_list, ob_errors,
+        fracLorenz96model, lorenz96Linearize, sys_errors);
+    mat& analysis = ENKFResult;
+    std::cout<<"EKF okay\n";
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
 }
 
 /*
@@ -451,11 +533,14 @@ int main(int argc, char** argv){
         sys_var_ptr = nullptr;
 
     // lorenz63EnKF();
-    if(problem == "ENKF")
+    if(problem == "ENKF"){
         if(version == 1)
             fracLorenz96EnKF();
         else if(version == 2)
             fracLorenz96EnKF_version2();
+    }
+    else if(problem == "EKF")
+        fracLorenz96EKf();
     else
         throw std::runtime_error("not supported filter algorithm");
 
