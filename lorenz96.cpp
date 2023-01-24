@@ -5,6 +5,7 @@
 #include <boost/program_options.hpp>
 
 using namespace arma;
+using namespace shiki;
 
 namespace config{
     int dim = 40;
@@ -21,22 +22,9 @@ namespace config{
     int ensemble_size = 20;
 }
 
-mat lorenz96model(const mat& ensemble, int idx, const mat& sys_var){
+mat Lorenz96_model(const mat& ensemble, int idx, const mat& sys_var){
     int M = ensemble.n_rows, N = ensemble.n_cols;
     mat newer(M, N, arma::fill::none);
-
-    // forward 
-    // for(int j=0; j<N; j++){
-    //     for(int i=0; i<M; i++){
-    //         int pre = (i + M - 1) % M;
-    //         int far = (i + M - 2) % M;
-    //         int next = (i + 1) % M;
-
-    //         double derivative = ensemble(pre, j) * (ensemble(next, j) - ensemble(far, j)) - ensemble(i, j) + config::F;
-    //         double value = derivative * config::dt + ensemble(i, j);
-    //         newer(i, j) = value;
-    //     }
-    // }
 
     for(int i=0; i<M; i++){
         int pre = (i + M - 1) % M;
@@ -62,7 +50,7 @@ mat lorenz96model(const mat& ensemble, int idx, const mat& sys_var){
 // we'll realise the observation operator as random matrix
 // so here we omit it
 
-mat generate_lorenz96(vec v0, double F, double time_max, double dt, const mat& sys_var){
+mat generate_Lorenz96(vec v0, double F, double time_max, double dt, const mat& sys_var){
     int num_iter = time_max / dt;
     if(num_iter * dt < time_max)
         num_iter++;
@@ -78,7 +66,7 @@ mat generate_lorenz96(vec v0, double F, double time_max, double dt, const mat& s
     double former_dt = config::dt;
     config::dt = dt;
     for(int i=0; i<num_iter; i++){
-        v0 = lorenz96model(v0, i, sys_var);
+        v0 = Lorenz96_model(v0, i, sys_var);
         // save new simulation
         for(int j=0; j<dim; j++){
             result(i+1, j) = v0(j);
@@ -91,14 +79,14 @@ mat generate_lorenz96(vec v0, double F, double time_max, double dt, const mat& s
     return result;
 }
 
-void test_lorenz96(){
+void test_Lorenz96(){
     vec v0 = arma::randn(40);
     mat sys_var(40, 40, arma::fill::zeros);
-    mat sol = generate_lorenz96(v0, 8, 100, 0.01, sys_var);
+    mat sol = generate_Lorenz96(v0, 8, 100, 0.01, sys_var);
     sol.save("./data/lorenz96.csv", arma::raw_ascii);
 }
 
-void lorenz96EnKF(){
+void Lorenz96_EnKF(){
     // 参数
     int dim = config::dim;
     int ob_dim = config::ob_dim;
@@ -116,7 +104,7 @@ void lorenz96EnKF(){
     *sys_error_ptr *= sys_var;
     // 参考解
     vec v0 = arma::randn(dim);
-    mat ref = generate_lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
     mat all_ob = H_ob(ref.t());
     ref.save("./data/lorenz96.csv", arma::raw_ascii);
     // 初始值
@@ -130,7 +118,7 @@ void lorenz96EnKF(){
     *error_ptr *= ob_var;
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
 
     for(int i=0; i<all_ob.n_cols; i++){
         // std::cout<<"in for\n";
@@ -144,12 +132,17 @@ void lorenz96EnKF(){
     // 迭代次数
     int num_iter = ob_list.size();
     
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
     
     int ensemble_size = config::ensemble_size;
-    auto ENKFResult = StochasticENKF(ensemble_size, init_ave, init_var, ob_list, num_iter, ob_errors, ob_op, lorenz96model, sys_errors);
+    auto ENKFResult = stochastic_ENKF_normal_test(
+        ensemble_size, num_iter,
+        init_ave, init_var, 
+        ob_list, ob_op, ob_errors,  
+        Lorenz96_model, sys_errors
+        );
     std::vector<vec> analysis_ = std::get<0>(ENKFResult);
     std::vector<double> skewness_ = std::get<1>(ENKFResult);
     std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
@@ -173,7 +166,7 @@ void lorenz96EnKF(){
     kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
-void lorenz96particle(){
+void Lorenz96_particle(){
     // 参数
     int dim = config::dim;
     int ob_dim = config::ob_dim;
@@ -188,7 +181,7 @@ void lorenz96particle(){
 
     // 参考解
     vec v0 = arma::randn(dim);
-    mat ref = generate_lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
     ref.save("./data/lorenz96.csv", arma::raw_ascii);
     
     // ob算子
@@ -213,7 +206,7 @@ void lorenz96particle(){
     };
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
     mat all_ob = H_ob(ref.t());
 
     for(int i=0; i<all_ob.n_cols; i++){
@@ -226,7 +219,7 @@ void lorenz96particle(){
     }
 
     // 系统误差
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<ob_list.size()+1; i++)
         sys_errors.add(sys_error_ptr);
     
@@ -239,7 +232,7 @@ void lorenz96particle(){
 
     // particle filter
     std::cout<<"ready for particle filter\n";
-    auto particle = ParticleFilter(ensemble, lorenz96model, likehood, ob_list, sys_errors);
+    auto particle = particle_filter(ensemble, Lorenz96_model, likehood, ob_list, sys_errors);
     std::cout<<"particle filter ended\n";
 
     // 后处理
@@ -283,9 +276,9 @@ int main(int argc, char** argv){
     arma::arma_rng::set_seed_random();
     // lorenz63EnKF();
     if(problem == "ENKF")
-        lorenz96EnKF();
+        Lorenz96_EnKF();
     else
-        lorenz96particle();
+        Lorenz96_particle();
 
     std::cout<<"problem type: "<<problem<<'\n'
             <<"dim: "<<dim<<'\n'

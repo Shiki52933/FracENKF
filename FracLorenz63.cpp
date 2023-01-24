@@ -26,7 +26,7 @@ namespace config{
 
     void (*sys_var_ptr)(mat&, mat&);
 
-    void addRealTime(mat& ensemble, mat& sys_var){
+    void add_real_time(mat& ensemble, mat& sys_var){
         double var = sys_var(0, 0);
 
         mat real_var = mat(3, 3, arma::fill::eye);
@@ -36,7 +36,7 @@ namespace config{
         ensemble.submat(0,0,2,ensemble.n_cols-1) += perturb;
     };
 
-    void addAllTime(mat& ensemble, mat& sys_var){
+    void add_all_time(mat& ensemble, mat& sys_var){
         double var = sys_var(0, 0);
         if(abs(var) < 1e-12)
             return;
@@ -48,21 +48,21 @@ namespace config{
         ensemble += perturb;
     }
 
-    void changeNoise(mat& ensemble, mat& sys_var){
+    void change_noise(mat& ensemble, mat& sys_var){
 
     }
 }
 
-mat FracLorenz63Model(const mat& ensemble, int idx, mat sys_var){
+mat fractional_Lorenz63_model(const mat& ensemble, int idx, mat sys_var){
     // 从上到下时间从近到远
     int dim = 3;
     int window = ensemble.n_rows / dim;
 
     // 首先计算分数阶导数
-    mat fracDirivative(dim, ensemble.n_cols, arma::fill::zeros);
+    mat frac_dirivative(dim, ensemble.n_cols, arma::fill::zeros);
     for(int i=0; i<window; i++){
         for(int idx=0; idx<dim; idx++){
-            fracDirivative.row(idx) += ensemble.row(i*dim + idx) * config::bino(i+1, idx);
+            frac_dirivative.row(idx) += ensemble.row(i*dim + idx) * config::bino(i+1, idx);
         }
     }
 
@@ -71,7 +71,7 @@ mat FracLorenz63Model(const mat& ensemble, int idx, mat sys_var){
     rhs.row(0) = config::sigma * (ensemble.row(1) - ensemble.row(0)); 
     rhs.row(1) = ensemble.row(0) % (config::rho - ensemble.row(2)) - ensemble.row(1);
     rhs.row(2) = ensemble.row(0) % ensemble.row(1) - config::beta * ensemble.row(2);
-    config::addAllTime(rhs, sys_var);
+    config::add_all_time(rhs, sys_var);
 
     for(int i=0; i<dim; i++){
         rhs.row(i) *= pow(config::dt, config::derivative_orders[i]);
@@ -79,14 +79,14 @@ mat FracLorenz63Model(const mat& ensemble, int idx, mat sys_var){
 
     if(window < config::window_length){
         mat ret(dim*(window+1), ensemble.n_cols, arma::fill::none);
-        ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - fracDirivative;
+        ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - frac_dirivative;
         ret.submat(dim,0,ret.n_rows-1,ret.n_cols-1) = ensemble;
         // if(config::sys_var_ptr)
         //     config::sys_var_ptr(ret, sys_var);
         return ret;
     }else{
         mat ret(ensemble.n_rows, ensemble.n_cols, arma::fill::none);
-        ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - fracDirivative;
+        ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - frac_dirivative;
         ret.submat(dim,0,ret.n_rows-1,ret.n_cols-1) = ensemble.submat(0,0,ensemble.n_rows-dim-1,ensemble.n_cols-1);
         // if(config::sys_var_ptr)
         //     config::sys_var_ptr(ret, sys_var);
@@ -94,7 +94,7 @@ mat FracLorenz63Model(const mat& ensemble, int idx, mat sys_var){
     }
 }
 
-mat generateFracLorenz63(double dt, double max_time, vec v0, mat sys_var){
+mat generate_fractional_Lorenz63(double dt, double max_time, vec v0, mat sys_var){
     int iter_num = max_time / dt;
     if(iter_num * dt < max_time)
         iter_num++;
@@ -112,11 +112,11 @@ mat generateFracLorenz63(double dt, double max_time, vec v0, mat sys_var){
     for(int i=1; i<iter_num+1; i++){
         if(i * dt <= max_time){
             // 这里是正常的dt
-            v0 = FracLorenz63Model(v0, i, sys_var);
+            v0 = fractional_Lorenz63_model(v0, i, sys_var);
             result.row(i) = v0.subvec(0, 2).t();
         }else{
             config::dt = max_time - (i - 1) * dt;
-            v0 = FracLorenz63Model(v0, i, sys_var);
+            v0 = fractional_Lorenz63_model(v0, i, sys_var);
             result.row(i) = v0.subvec(0, 2).t();
         }
     }
@@ -128,7 +128,7 @@ mat generateFracLorenz63(double dt, double max_time, vec v0, mat sys_var){
     return result;
 }
 
-mat lorenz63Linearize(vec mean){
+mat Lorenz63_linearize(vec mean){
     return mat{
         {-config::sigma, config::sigma, 0},
         {config::rho - mean(2), -1, -mean(0)},
@@ -136,7 +136,7 @@ mat lorenz63Linearize(vec mean){
     };
 }
 
-mat lorenz63rhs(const mat& ensemble){
+mat Lorenz63_rhs(const mat& ensemble){
     // 计算右端项
     const int dim = 3;
     mat rhs(dim, ensemble.n_cols, arma::fill::none);
@@ -146,13 +146,13 @@ mat lorenz63rhs(const mat& ensemble){
     return rhs;
 }
 
-void test_frac_lorenz63(){
-    mat sol = generateFracLorenz63(0.005, 100, {0.1,0.1,0.1}, mat(3,3,arma::fill::zeros));
+void test_fractional_lorenz63(){
+    mat sol = generate_fractional_Lorenz63(0.005, 100, {0.1,0.1,0.1}, mat(3,3,arma::fill::zeros));
     // config::bino = compute_bino(config::derivative_orders, config::window_length);
     sol.save("./data/lorenz63.csv", arma::raw_ascii);
 }
 
-void fracLorenz63EnKF(){
+void fractional_Lorenz63_EnKF(){
     // 参数
     double ob_var = config::ob_var;
     double sys_var = config::sys_var;
@@ -163,7 +163,7 @@ void fracLorenz63EnKF(){
     *sys_error_ptr *= sys_var;
     // 参考解
     vec v0 = randn(3);
-    mat ref = generateFracLorenz63(config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_fractional_Lorenz63(config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
     ref.save("./data/lorenz63.csv", arma::raw_ascii);
     std::cout<<"reference solution okay\n";
 
@@ -214,31 +214,46 @@ void fracLorenz63EnKF(){
     int ensemble_size = config::ensemble_size;
 
     std::cout<<"ENKF ready\n";
-    auto ENKFResult = StochasticENKF(ensemble_size, init_ave, init_var, ob_list, num_iter, ob_errors, ob_op, FracLorenz63Model, sys_errors);
-    std::vector<vec> analysis_ = std::get<0>(ENKFResult);
-    std::vector<double> skewness_ = std::get<1>(ENKFResult);
-    std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
-    std::cout<<"ENKF okay\n";
+    auto ENKFResult = stochastic_ENKF(
+        ensemble_size, num_iter, 
+        init_ave, init_var, 
+        ob_list, ob_op, ob_errors, 
+        fractional_Lorenz63_model, sys_errors
+        );
 
+    std::vector<vec>& analysis_ = ENKFResult;
     arma::mat analysis(analysis_.size(), 3);
     for(int i=0; i<analysis.n_rows; i++){
         analysis(i, 0) = analysis_[i](0);
         analysis(i, 1) = analysis_[i](1);
         analysis(i, 2) = analysis_[i](2);
     }
-    arma::mat skewness(skewness_.size(), 1);
-    arma::mat kurtosis(skewness_.size(), 1);
-    for(int i=0; i<skewness.n_rows; i++){
-        skewness(i, 0) = skewness_[i];
-        kurtosis(i, 0) = kurtosis_[i];
-    }
-
     analysis.save("./data/analysis.csv", arma::raw_ascii);
-    skewness.save("./data/skewness.csv", arma::raw_ascii);
-    kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
+
+    // std::vector<vec> analysis_ = std::get<0>(ENKFResult);
+    // std::vector<double> skewness_ = std::get<1>(ENKFResult);
+    // std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
+    // std::cout<<"ENKF okay\n";
+
+    // arma::mat analysis(analysis_.size(), 3);
+    // for(int i=0; i<analysis.n_rows; i++){
+    //     analysis(i, 0) = analysis_[i](0);
+    //     analysis(i, 1) = analysis_[i](1);
+    //     analysis(i, 2) = analysis_[i](2);
+    // }
+    // arma::mat skewness(skewness_.size(), 1);
+    // arma::mat kurtosis(skewness_.size(), 1);
+    // for(int i=0; i<skewness.n_rows; i++){
+    //     skewness(i, 0) = skewness_[i];
+    //     kurtosis(i, 0) = kurtosis_[i];
+    // }
+
+    // analysis.save("./data/analysis.csv", arma::raw_ascii);
+    // skewness.save("./data/skewness.csv", arma::raw_ascii);
+    // kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
-void fracLorenz63EnKF_version2(){
+void fractional_Lorenz63_EnKF_version2(){
     // 参数
     double ob_var = config::ob_var;
     double sys_var = config::sys_var;
@@ -249,7 +264,7 @@ void fracLorenz63EnKF_version2(){
     *sys_error_ptr *= sys_var;
     // 参考解
     vec v0 = randn(3);
-    mat ref = generateFracLorenz63(config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_fractional_Lorenz63(config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
     ref.save("./data/lorenz63.csv", arma::raw_ascii);
     std::cout<<"reference solution okay\n";
 
@@ -299,15 +314,18 @@ void fracLorenz63EnKF_version2(){
     
     int ensemble_size = config::ensemble_size;
 
-    std::cout<<"ENKF ready\n";
+    std::cout<<"ENKF version 2 ready\n";
     config::window_length = INT_MAX;
     // config::bino = compute_bino(config::derivative_orders, config::window_length);
-    auto ENKFResult = FStochasticENKF<3, 10>(ensemble_size, init_ave, init_var, ob_list, 
-        num_iter, ob_errors, ob_op, FracLorenz63Model, sys_errors, 0.1*arma::eye(15, 15));
+    auto ENKFResult = accumulated_stochastic_ENKF(
+        3, 10,
+        ensemble_size, num_iter, 0.1*arma::eye(15, 15),
+        init_ave, init_var, 
+        ob_list, ob_errors, ob_op, 
+        fractional_Lorenz63_model, sys_errors
+        );
     std::vector<vec> analysis_ = ENKFResult;
-    // std::vector<double> skewness_ = std::get<1>(ENKFResult);
-    // std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
-    std::cout<<"ENKF okay\n";
+    std::cout<<"ENKF version 2 okay\n";
 
     mat analysis = arma::reshape(analysis_.back(), 3, analysis_.size()).t();
     analysis = arma::reverse(analysis);
@@ -318,19 +336,10 @@ void fracLorenz63EnKF_version2(){
     //     analysis(i, 2) = analysis_[i](2);
     // }
 
-    // arma::mat skewness(skewness_.size(), 1);
-    // arma::mat kurtosis(skewness_.size(), 1);
-    // for(int i=0; i<skewness.n_rows; i++){
-    //     skewness(i, 0) = skewness_[i];
-    //     kurtosis(i, 0) = kurtosis_[i];
-    // }
-
     analysis.save("./data/analysis.csv", arma::raw_ascii);
-    // skewness.save("./data/skewness.csv", arma::raw_ascii);
-    // kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
-void fracLorenz63EKf(){
+void fractional_Lorenz63_EKf(){
     // 参数
     double ob_var = config::ob_var;
     double sys_var = config::sys_var;
@@ -341,7 +350,7 @@ void fracLorenz63EKf(){
     *sys_error_ptr *= sys_var;
     // 参考解
     vec v0 = randn(3);
-    mat ref = generateFracLorenz63(config::dt, config::max_time, v0, *sys_error_ptr);
+    mat ref = generate_fractional_Lorenz63(config::dt, config::max_time, v0, *sys_error_ptr);
     ref.save("./data/lorenz63.csv", arma::raw_ascii);
     std::cout<<"reference solution okay\n";
 
@@ -390,18 +399,18 @@ void fracLorenz63EKf(){
         sys_errors.add(sys_error_ptr);
     
     std::cout<<"EKF ready\n";
-    // config::bino = compute_bino(config::derivative_orders, config::window_length);
-    auto ENKFResult = fEKF(3, config::derivative_orders, config::dt,
+    auto ENKFResult = fEKF(
+        3, config::derivative_orders, config::dt,
         init_ave, init_var,
-        H, ob_list, ob_errors,
-        FracLorenz63Model, lorenz63Linearize, sys_errors);
+        ob_list, H, ob_errors,
+        fractional_Lorenz63_model, Lorenz63_linearize, sys_errors);
     mat& analysis = ENKFResult;
     std::cout<<"EKF okay\n";
 
     analysis.save("./data/analysis.csv", arma::raw_ascii);
 }
 
-void fracLorenz63UKf(){
+void fractional_Lorenz63_UKf(){
     // 参数
     double ob_var = config::ob_var;
     double sys_var = config::sys_var;
@@ -412,7 +421,7 @@ void fracLorenz63UKf(){
     *sys_error_ptr *= sys_var;
     // 参考解
     vec v0 = randn(3);
-    mat ref = generateFracLorenz63(config::dt, config::max_time, v0, *sys_error_ptr);
+    mat ref = generate_fractional_Lorenz63(config::dt, config::max_time, v0, *sys_error_ptr);
     ref.save("./data/lorenz63.csv", arma::raw_ascii);
     std::cout<<"reference solution okay\n";
 
@@ -462,18 +471,19 @@ void fracLorenz63UKf(){
     
     std::cout<<"UKF ready\n";
     // config::bino = compute_bino(config::derivative_orders, config::window_length);
-    auto ENKFResult = fUKF(0.5, 2, 0,
+    auto ENKFResult = fUKF(
+        0.5, 2, 0,
         3, config::derivative_orders, config::dt,
         init_ave, init_var,
-        H, ob_list, ob_errors,
-        lorenz63rhs, sys_errors, 0.1*arma::eye(3,3));
+        ob_list, H, ob_errors,
+        Lorenz63_rhs, sys_errors, 0.1*arma::eye(3,3));
     mat& analysis = ENKFResult;
     std::cout<<"UKF okay\n";
 
     analysis.save("./data/analysis.csv", arma::raw_ascii);
 }
 
-void fracLorenz63EnKF_3DVar(){
+void fractional_Lorenz63_3DVar(){
     // 参数
     double ob_var = config::ob_var;
     double sys_var = config::sys_var;
@@ -484,7 +494,7 @@ void fracLorenz63EnKF_3DVar(){
     *sys_error_ptr *= sys_var;
     // 参考解
     vec v0 = randn(3);
-    mat ref = generateFracLorenz63(config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_fractional_Lorenz63(config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
     ref.save("./data/lorenz63.csv", arma::raw_ascii);
     std::cout<<"reference solution okay\n";
 
@@ -537,12 +547,13 @@ void fracLorenz63EnKF_3DVar(){
 
     std::cout<<"ENKF ready\n";
     config::window_length = INT_MAX;
-    // config::bino = compute_bino(config::derivative_orders, config::window_length);
-    auto ENKFResult = var_3d(3, 1, init_ave+1, 
-        0.01*arma::eye(15,15), H, ob_list, ob_errors, FracLorenz63Model, sys_errors);
+    auto ENKFResult = var_3d(
+        3, 5, 
+        init_ave, 0.01*arma::eye(15,15), 
+        ob_list, H, ob_errors, 
+        fractional_Lorenz63_model, sys_errors
+        );
     std::vector<vec> analysis_ = ENKFResult;
-    // std::vector<double> skewness_ = std::get<1>(ENKFResult);
-    // std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
     std::cout<<"ENKF okay\n";
 
     arma::mat analysis(analysis_.size(), 3);
@@ -551,16 +562,8 @@ void fracLorenz63EnKF_3DVar(){
         analysis(i, 1) = analysis_[i](1);
         analysis(i, 2) = analysis_[i](2);
     }
-    // arma::mat skewness(skewness_.size(), 1);
-    // arma::mat kurtosis(skewness_.size(), 1);
-    // for(int i=0; i<skewness.n_rows; i++){
-    //     skewness(i, 0) = skewness_[i];
-    //     kurtosis(i, 0) = kurtosis_[i];
-    // }
 
     analysis.save("./data/analysis.csv", arma::raw_ascii);
-    // skewness.save("./data/skewness.csv", arma::raw_ascii);
-    // kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
 int main(int argc, char** argv){
@@ -604,11 +607,11 @@ int main(int argc, char** argv){
     // bino = compute_bino(derivative_orders, window_length);
 
     if(sys_var_type == "real")
-        sys_var_ptr = addRealTime;
+        sys_var_ptr = add_real_time;
     else if(sys_var_type == "all")
-        sys_var_ptr = addAllTime;
+        sys_var_ptr = add_all_time;
     else if(sys_var_type == "noise")
-        sys_var_ptr = changeNoise;
+        sys_var_ptr = change_noise;
     else
         sys_var_ptr = nullptr;
     
@@ -616,15 +619,15 @@ int main(int argc, char** argv){
     // lorenz63EnKF();
     if(problem == "ENKF")
         if(version == 1)
-            fracLorenz63EnKF();
+            fractional_Lorenz63_EnKF();
         else
-            fracLorenz63EnKF_version2();
+            fractional_Lorenz63_EnKF_version2();
     else if(problem == "3d-var")
-        fracLorenz63EnKF_3DVar();
+        fractional_Lorenz63_3DVar();
     else if(problem == "EKF")
-        fracLorenz63EKf();
+        fractional_Lorenz63_EKf();
     else if(problem == "UKF")
-        fracLorenz63UKf();
+        fractional_Lorenz63_UKf();
     else
         throw("Not implemented yet");
 

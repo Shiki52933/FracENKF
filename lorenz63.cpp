@@ -5,8 +5,10 @@
 #include <iostream>
 #include <boost/program_options.hpp>
 
+using namespace arma;
+using namespace shiki;
 
-mat generate_lorenz63(double sigma, double rho, double beta, double dt, double t_max, vec x0, mat sys_var){
+mat generate_Lorenz63(double sigma, double rho, double beta, double dt, double t_max, vec x0, mat sys_var){
     int num_iter = t_max / dt;
     if( dt * num_iter < t_max )
         num_iter++;
@@ -38,23 +40,6 @@ mat generate_lorenz63(double sigma, double rho, double beta, double dt, double t
     return sol;
 }
 
-// mat H_ob(mat& ensemble){
-//     vec a{0, 1, 1};
-//     vec b{1, 1, 0};
-//     mat H(3, 2);
-//     H.col(0) = a;
-//     H.col(1) = b;
-//     H = H.t();
-//     return H * ensemble;
-//     /*
-//     mat ob(2, ensemble.n_cols);
-//     for(int i=0; i<ensemble.n_cols; i++){
-//         ob(0, i) = sin(ensemble(0, i)) + cos(ensemble(1, i));
-//         ob(1, i) = sin(ensemble(1, i)) + cos(ensemble(2, i));
-//     }
-//     return ob;
-//     */
-// }
 
 namespace config{
     double sigma = 10, rho = 28, beta = 8.0/3;
@@ -95,7 +80,7 @@ mat model(mat& ensemble, int idx, mat& sys_var){
     return sol+perturb;
 }
 
-void lorenz63EnKF(){
+void Lorenz63_EnKF(){
     // 参数
     double ob_var = config::ob_var;
     double sys_var = config::sys_var;
@@ -105,7 +90,7 @@ void lorenz63EnKF(){
     auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
     *sys_error_ptr *= sys_var;
     // 参考解
-    mat ref = generate_lorenz63(config::sigma, config::rho, config::beta, config::dt, config::max_time, vec{2,2,2}, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_Lorenz63(config::sigma, config::rho, config::beta, config::dt, config::max_time, vec{2,2,2}, *sys_error_ptr*config::real_sys_var);
     
     mat H = arma::randn(2, 3);
     auto H_ob = [&H](const mat& ensemble){
@@ -122,7 +107,7 @@ void lorenz63EnKF(){
     *error_ptr *= ob_var;
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
 
     for(int i=0; i<all_ob.n_cols; i++){
         // std::cout<<"in for\n";
@@ -136,12 +121,17 @@ void lorenz63EnKF(){
     // 迭代次数
     int num_iter = ob_list.size();
     
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
     
     int ensemble_size = config::ensemble_size;
-    auto ENKFResult = StochasticENKF(ensemble_size, init_ave, init_var, ob_list, num_iter, ob_errors, ob_op, model, sys_errors);
+    auto ENKFResult = stochastic_ENKF_normal_test(
+        ensemble_size, num_iter, 
+        init_ave, init_var, 
+        ob_list, ob_op, ob_errors, 
+        model, sys_errors
+        );
     std::vector<vec> analysis_ = std::get<0>(ENKFResult);
     std::vector<double> skewness_ = std::get<1>(ENKFResult);
     std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
@@ -165,7 +155,7 @@ void lorenz63EnKF(){
     kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
-void lorenz63_3DVar(){
+void Lorenz63_3DVar(){
     // 参数
     double ob_var = config::ob_var;
     double sys_var = config::sys_var;
@@ -175,7 +165,7 @@ void lorenz63_3DVar(){
     auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
     *sys_error_ptr *= sys_var;
     // 参考解
-    mat ref = generate_lorenz63(config::sigma, config::rho, config::beta, config::dt, config::max_time, vec{2,2,2}, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_Lorenz63(config::sigma, config::rho, config::beta, config::dt, config::max_time, vec{2,2,2}, *sys_error_ptr*config::real_sys_var);
     
     mat H = arma::randn(2, 3);
     auto H_ob = [&H](const mat& ensemble){
@@ -192,7 +182,7 @@ void lorenz63_3DVar(){
     *error_ptr *= ob_var;
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
 
     for(int i=0; i<all_ob.n_cols; i++){
         // std::cout<<"in for\n";
@@ -206,12 +196,17 @@ void lorenz63_3DVar(){
     // 迭代次数
     int num_iter = ob_list.size();
     
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<num_iter+1; i++)
         sys_errors.add(sys_error_ptr);
     
     int ensemble_size = config::ensemble_size;
-    auto ThreeDVarResult = ThreeDVar(3, 1, init_ave, *sys_error_ptr, H, ob_list, ob_errors, model, sys_errors);
+    auto ThreeDVarResult = var_3d(
+        3, 1, 
+        init_ave, *sys_error_ptr,
+        ob_list, H, ob_errors, 
+        model, sys_errors
+        );
     std::vector<vec>& analysis_ = ThreeDVarResult;
     std::cout<<"ENKF okay\n";
 
@@ -225,7 +220,7 @@ void lorenz63_3DVar(){
     analysis.save("./data/analysis.csv", arma::raw_ascii);
 }
 
-void lorenz63particle(){
+void Lorenz63_particle(){
     // 参数
     double ob_var = config::ob_var;
     double sys_var = config::sys_var;
@@ -237,7 +232,7 @@ void lorenz63particle(){
     *sys_error_ptr *= sys_var;
 
     // 参考解
-    mat ref = generate_lorenz63(config::sigma, config::rho, config::beta, config::dt, config::max_time, vec{2,2,2}, *sys_error_ptr*config::real_sys_var);
+    mat ref = generate_Lorenz63(config::sigma, config::rho, config::beta, config::dt, config::max_time, vec{2,2,2}, *sys_error_ptr*config::real_sys_var);
     
     // ob算子
     mat H = arma::randn(2, 3);
@@ -258,7 +253,7 @@ void lorenz63particle(){
     };
 
     std::vector<vec> ob_list;
-    Errors ob_errors;
+    errors ob_errors;
     mat all_ob = H_ob(ref);
 
     for(int i=0; i<all_ob.n_cols; i++){
@@ -271,7 +266,7 @@ void lorenz63particle(){
     }
 
     // 系统误差
-    Errors sys_errors;
+    errors sys_errors;
     for(int i=0; i<ob_list.size()+1; i++)
         sys_errors.add(sys_error_ptr);
     
@@ -284,7 +279,7 @@ void lorenz63particle(){
 
     // particle filter
     std::cout<<"ready for particle filter\n";
-    auto particle = ParticleFilter(ensemble, model, likehood, ob_list, sys_errors);
+    auto particle = particle_filter(ensemble, model, likehood, ob_list, sys_errors);
     std::cout<<"particle filter ended\n";
 
     // 后处理
@@ -325,24 +320,14 @@ int main(int argc, char** argv){
     store(parse_command_line(argc, argv, cmd), map);
     notify(map);
 
-/*
-    config::sigma = map["sigma"].as<double>();
-    config::rho = map["rho"].as<double>();
-    config::beta = map["beta"].as<double>();
-    config::ob_var = map["ob error"].as<double>();
-    config::sys_var = map["system error"].as<double>();
-    config::real_sys_var = map["real system error"].as<double>();
-    config::select_every = map["select every"].as<int>();
-    config::ensemble_size = map["ensemble size"].as<int>();
-*/ 
     arma::arma_rng::set_seed_random();
     // lorenz63EnKF();
     if(problem == "ENKF")
-        lorenz63EnKF();
+        Lorenz63_EnKF();
     else if(problem == "particle")
-        lorenz63particle();
+        Lorenz63_particle();
     else if(problem == "3d-var")
-        lorenz63_3DVar();
+        Lorenz63_3DVar();
     else
         throw std::runtime_error("not supported filter algorithm");
 

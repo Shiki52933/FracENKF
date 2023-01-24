@@ -1,3 +1,4 @@
+#pragma once
 #include "StochasticENKF.hpp"
 #include <vector>
 #include <memory>

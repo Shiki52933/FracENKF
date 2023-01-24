@@ -9,7 +9,7 @@ template<typename T>
 std::vector<vec> 
 var_3d(int state_num, int time_window, 
     vec mean, mat variance, 
-    mat ob_op, std::vector<vec> ob_lists, errors ob_vars, 
+    std::vector<vec> ob_lists, mat ob_op, errors ob_vars, 
     T model, errors sys_vars){
     std::vector<vec> results;
     int iter_num = ob_lists.size();
