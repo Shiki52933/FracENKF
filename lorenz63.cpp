@@ -1,6 +1,8 @@
 #include "StochasticENKF.hpp"
 #include "ParticleFilter.hpp"
 #include "3DVar.hpp"
+#include "fUKF.hpp"
+#include "fEKF.hpp"
 #include <armadillo>
 #include <iostream>
 #include <boost/program_options.hpp>
@@ -53,7 +55,25 @@ namespace config{
     int ensemble_size = 20;
 }
 
-mat model(mat& ensemble, int idx, mat& sys_var){
+mat Lorenz63_rhs(const mat& ensemble){
+    // 计算右端项
+    const int dim = 3;
+    mat rhs(dim, ensemble.n_cols, arma::fill::none);
+    rhs.row(0) = config::sigma * (ensemble.row(1) - ensemble.row(0)); 
+    rhs.row(1) = ensemble.row(0) % (config::rho - ensemble.row(2)) - ensemble.row(1);
+    rhs.row(2) = ensemble.row(0) % ensemble.row(1) - config::beta * ensemble.row(2);
+    return rhs;
+}
+
+mat Lorenz63_linearize(vec mean){
+    return mat{
+        {-config::sigma, config::sigma, 0},
+        {config::rho - mean(2), -1, -mean(0)},
+        {mean(1), mean(0), -config::beta}
+    };
+}
+
+mat model(const mat& ensemble, int idx, mat sys_var){
     double sigma = config::sigma, rho = config::rho, beta = config::beta;
     double dt = config::dt;
 
@@ -297,6 +317,154 @@ void Lorenz63_particle(){
     assimilated.save("./data/analysis.csv", arma::raw_ascii);
 }
 
+void Lorenz63_UKf(){
+    // 参数
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    vec v0 = randn(3);
+    mat ref = generate_Lorenz63(
+        config::sigma, config::rho, config::beta,
+        config::dt, config::max_time, v0, *sys_error_ptr
+        );
+    std::cout<<"reference solution okay\n";
+
+    mat H = arma::randn(2, 3);
+    auto H_ob = [&H](const mat& ensemble) -> mat {
+        // std::cout<<"ensemble n_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        if(ensemble.n_rows == 3){
+            return H * ensemble;
+        }else{
+            // std::cout<<"start multiplication\n";
+            mat real_time = ensemble.submat(0, 0, 2, ensemble.n_cols-1);
+            mat ret = H * real_time;
+            // std::cout<<"end multiplication\n";
+            return ret;
+        }
+    };
+    // mat temp = ref.t();
+    mat all_ob = H_ob(ref);
+    std::cout<<"all ob okay\n";
+    // 初始值
+    vec init_ave = v0;
+    mat init_var(3, 3, arma::fill::eye);
+    init_var *= init_var_;
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(2, 2, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(2,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    
+    errors sys_errors;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    std::cout<<"UKF ready\n";
+    // config::bino = compute_bino(config::derivative_orders, config::window_length);
+    auto ENKFResult = fUKF(
+        0.5, 2, 0,
+        3, drowvec{1.,1.,1.}, config::dt,
+        init_ave, init_var,
+        ob_list, H, ob_errors,
+        Lorenz63_rhs, sys_errors, 0.1*arma::eye(3,3));
+    mat& analysis = ENKFResult;
+    std::cout<<"UKF okay\n";
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+}
+
+void Lorenz63_EKf(){
+    // 参数
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    vec v0 = randn(3);
+    mat ref = generate_Lorenz63(
+        config::sigma, config::rho, config::beta,
+        config::dt, config::max_time, v0, *sys_error_ptr
+        );
+    std::cout<<"reference solution okay\n";
+
+    mat H = arma::randn(2, 3);
+    auto H_ob = [&H](const mat& ensemble) -> mat {
+        // std::cout<<"ensemble n_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        if(ensemble.n_rows == 3){
+            return H * ensemble;
+        }else{
+            // std::cout<<"start multiplication\n";
+            mat real_time = ensemble.submat(0, 0, 2, ensemble.n_cols-1);
+            mat ret = H * real_time;
+            // std::cout<<"end multiplication\n";
+            return ret;
+        }
+    };
+    // mat temp = ref.t();
+    mat all_ob = H_ob(ref);
+    std::cout<<"all ob okay\n";
+    // 初始值
+    vec init_ave{0., 0., 0.};
+    mat init_var(3, 3, arma::fill::eye);
+    init_var *= init_var_;
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(2, 2, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(2,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    
+    errors sys_errors;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    std::cout<<"EKF ready\n";
+    auto ENKFResult = fEKF(
+        3, drowvec{1.,1.,1.}, config::dt,
+        init_ave, init_var,
+        ob_list, H, ob_errors,
+        model, Lorenz63_linearize, sys_errors);
+    mat& analysis = ENKFResult;
+    std::cout<<"EKF okay\n";
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+}
+
 int main(int argc, char** argv){
     using namespace boost::program_options;
     using namespace config;
@@ -328,6 +496,10 @@ int main(int argc, char** argv){
         Lorenz63_particle();
     else if(problem == "3d-var")
         Lorenz63_3DVar();
+    else if(problem == "UKF")
+        Lorenz63_UKf();
+    else if(problem == "EKF")
+        Lorenz63_EKf();
     else
         throw std::runtime_error("not supported filter algorithm");
 

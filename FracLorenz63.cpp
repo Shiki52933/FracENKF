@@ -442,7 +442,7 @@ void fractional_Lorenz63_UKf(){
     mat all_ob = H_ob(ref.t());
     std::cout<<"all ob okay\n";
     // 初始值
-    vec init_ave = v0;
+    vec init_ave = vec{0.,0.,0.};
     mat init_var(3, 3, arma::fill::eye);
     init_var *= init_var_;
     // ob

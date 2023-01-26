@@ -15,9 +15,21 @@ plt.show()
 # plt.savefig("./images/lorenz96-1.png")
 # plt.close()
 
+fig = plt.figure()
+ax1 = plt.axes(projection='3d')
+ax1.plot3D(sol[:,0], sol[:,1], sol[:,2], 'gray') 
+plt.title("reference 3 components")
+plt.show()
+
 analysis = np.loadtxt("./data/analysis.csv")
 error = analysis - sol
 ab_error = np.max(np.abs(error), axis=-1)
+
+fig = plt.figure()
+ax1 = plt.axes(projection='3d')
+ax1.plot3D(analysis[:,0], analysis[:,1], analysis[:,2], 'gray') 
+plt.title("analysis 3 components")
+plt.show()
 
 plt.plot(range(len(ab_error)), ab_error)
 plt.title("absolutely error")

@@ -1,6 +1,7 @@
 #include "StochasticENKF.hpp"
 #include "ParticleFilter.hpp"
 #include "fEKF.hpp"
+#include "fUKF.hpp"
 
 #include <iostream>
 #include <boost/program_options.hpp>
@@ -33,8 +34,10 @@ namespace config{
     double dt = 0.005;
     double t_max = 200;
 
+    double alpha, beta, k;
+
     int window_length = 10;
-    drowvec orders = randn<drowvec>(dim, distr_param(0.8, 1e-1));
+    drowvec orders = randn<drowvec>(dim, distr_param(1., 1e-1));
     mat bino = compute_bino(orders, (int)200/dt);
 
     double ob_var = 0.01;
@@ -112,6 +115,20 @@ mat fractional_Lorenz96_model(const mat& ensemble, int idx, const mat& sys_var){
         ret.submat(dim,0,ret.n_rows-1,ret.n_cols-1) = ensemble.submat(0,0,ensemble.n_rows-dim-1,ensemble.n_cols-1);
         return ret;
     }
+}
+
+mat Lorenz96_rhs(const mat& ensemble){
+    int dim = config::dim;
+    // 计算右端项
+    mat rhs(dim, ensemble.n_cols, arma::fill::none);
+    for(int i=0; i<dim; i++){
+        int pre = (i + dim - 1) % dim;
+        int far = (i + dim - 2) % dim;
+        int next = (i + 1) % dim;
+
+        rhs.row(i) = ensemble.row(pre) % (ensemble.row(next) - ensemble.row(far)) - ensemble.row(i) + config::F;
+    }
+    return rhs;
 }
 
 // we'll realise the observation operator as random matrix
@@ -405,6 +422,81 @@ void fractional_Lorenz96_EKf(){
     analysis.save("./data/analysis.csv", arma::raw_ascii);
 }
 
+void fractional_Lorenz96_UKf(){
+    // 参数
+    int dim = config::dim;
+    int ob_dim = config::ob_dim;
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    vec v0 = randn(dim);
+    mat ref = generate_fractional_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr);
+    ref.save("./data/lorenz96.csv", arma::raw_ascii);
+    std::cout<<"reference solution okay\n";
+
+    mat H = arma::randn(ob_dim, dim);
+    auto H_ob = [&H, dim](const mat& ensemble) -> mat {
+        // std::cout<<"ensemble n_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        if(ensemble.n_rows == dim){
+            return H * ensemble;
+        }else{
+            // std::cout<<"start multiplication\n";
+            mat real_time = ensemble.submat(0, 0, dim-1, ensemble.n_cols-1);
+            mat ret = H * real_time;
+            // std::cout<<"end multiplication\n";
+            return ret;
+        }
+    };
+    // mat temp = ref.t();
+    mat all_ob = H_ob(ref.t());
+    std::cout<<"all ob okay\n";
+    // 初始值
+    vec init_ave = v0;
+    mat init_var(dim, dim, arma::fill::eye);
+    init_var *= init_var_;
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    
+    errors sys_errors;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    std::cout<<"UKF ready\n";
+    // config::bino = compute_bino(config::derivative_orders, config::window_length);
+    auto ENKFResult = fUKF(
+        config::alpha, config::beta, config::k,
+        dim, config::orders, config::dt,
+        init_ave, init_var,
+        ob_list, H, ob_errors,
+        Lorenz96_rhs, sys_errors, 0.1*arma::eye(dim, dim));
+    mat& analysis = ENKFResult;
+    std::cout<<"UKF okay\n";
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+}
+
 /*
 // void lorenz96particle(){
 //     // 参数
@@ -510,6 +602,9 @@ int main(int argc, char** argv){
     cmd.add_options()("sys_var_type,y", value<std::string>(&sys_var_type)->default_value("real"), "system_error_type");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
     cmd.add_options()("real_sys_var,r", value<double>(&real_sys_var)->default_value(1.), "real_system_error");
+    cmd.add_options()("alpha,a", value<double>(&alpha)->default_value(0.5), "alpha for UKF");
+    cmd.add_options()("beta", value<double>(&beta)->default_value(2), "beta for UKF");
+    cmd.add_options()("k,k", value<double>(&k)->default_value(3-dim), "k for UKF");
     cmd.add_options()("select,s", value<int>(&select_every)->default_value(10), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
     cmd.add_options()("max_time,t", value<double>(&t_max)->default_value(20), "max time");
@@ -538,6 +633,8 @@ int main(int argc, char** argv){
     }
     else if(problem == "EKF")
         fractional_Lorenz96_EKf();
+    else if(problem == "UKF")
+        fractional_Lorenz96_UKf();
     else
         throw std::runtime_error("not supported filter algorithm");
 
@@ -552,9 +649,11 @@ int main(int argc, char** argv){
             <<"sys_var: "<<sys_var<<'\n'
             <<"sys var type: "<<sys_var_type<<'\n'
             <<"real_sys_var: "<<real_sys_var<<'\n'
+            <<"alpha: "<<alpha<<"\n"
+            <<"beta: "<<beta<<"\n"
+            <<"k: "<<k<<"\n"
             <<"select every: "<<select_every<<'\n'
             <<"ensemble size: "<<ensemble_size<<'\n'
             <<"max time: "<<t_max<<'\n'
-            <<"orders: \n"<<orders<<"\n"
-            <<"bino: "<<bino.submat(0,0,20-1,dim-1)<<'\n';
+            <<"orders: \n"<<orders<<"\n";
 }

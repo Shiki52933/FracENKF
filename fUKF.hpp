@@ -46,7 +46,8 @@ mat fUKF(
 
             mat gain = var * H.t() * arma::inv(H * var * H.t() + ob_errs[i]);
             std::cout<<"error in observation: "<<arma::norm(ob_list[i] - H * mean)<<"\n";
-            mean += gain * (ob_list[i] - H * mean);
+            vec innovation = gain * (ob_list[i] - H * mean);
+            mean += innovation;
             var = (arma::eye(gain.n_rows, gain.n_rows) - gain * H) * var;
 
             result.row(i) = mean.t();
@@ -72,7 +73,7 @@ mat fUKF(
         // 然后通过模型,模型不要噪声
         mat prediction = rhs(ensemble);
         prediction = mat_h * prediction;
-        prediction.each_col([&](vec& col){col += gammas[1] * result.row(i).t();}); 
+        prediction.each_col([&](vec& col){col -= gammas[1] * result.row(i).t();}); 
 
         // 然后计算方差和协方差
         vec new_mean(state_dim, arma::fill::zeros);
@@ -89,7 +90,7 @@ mat fUKF(
         // 然后计算均值和方差
         vec real_new_mean = new_mean;
         for(int j=2; j<=i+1; j++)
-            real_new_mean -= pow(-1, j) * gammas[j] * (result.row(i+1-j).t());
+            real_new_mean -= gammas[j] * (result.row(i+1-j).t());
 
         mat real_new_var = new_var;
         for(int j=2; j<=i+1; j++){
