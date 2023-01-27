@@ -400,7 +400,7 @@ void fractional_Lorenz63_EKf(){
     
     std::cout<<"EKF ready\n";
     auto ENKFResult = fEKF(
-        3, config::derivative_orders, config::dt,
+        3, config::derivative_orders, config::dt, 0.1*arma::eye(3,3),
         init_ave, init_var,
         ob_list, H, ob_errors,
         fractional_Lorenz63_model, Lorenz63_linearize, sys_errors);
@@ -616,6 +616,9 @@ int main(int argc, char** argv){
         sys_var_ptr = nullptr;
     
     arma::arma_rng::set_seed_random();
+    derivative_orders = {1.05, 1.1, 0.9};
+    window_length = 100000;
+    bino = compute_bino(derivative_orders, window_length);
     // lorenz63EnKF();
     if(problem == "ENKF")
         if(version == 1)

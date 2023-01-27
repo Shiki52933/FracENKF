@@ -412,7 +412,7 @@ void fractional_Lorenz96_EKf(){
     std::cout<<"EKF ready\n";
     // config::bino = compute_bino(config::derivative_orders, config::window_length);
     auto ENKFResult = fEKF(
-        dim, config::orders, config::dt,
+        dim, config::orders, config::dt, 0.1*arma::eye(dim, dim),
         init_ave, init_var,
         ob_list, H, ob_errors,
         fractional_Lorenz96_model, lorenz96Linearize, sys_errors);
@@ -456,7 +456,7 @@ void fractional_Lorenz96_UKf(){
     mat all_ob = H_ob(ref.t());
     std::cout<<"all ob okay\n";
     // 初始值
-    vec init_ave = v0;
+    vec init_ave(dim, arma::fill::zeros);
     mat init_var(dim, dim, arma::fill::eye);
     init_var *= init_var_;
     // ob

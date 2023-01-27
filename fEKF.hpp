@@ -9,7 +9,7 @@ typedef mat (*linearize)(vec);
 
 template<typename T>
 mat fEKF(
-    int state_dim, drowvec orders, double h,
+    int state_dim, drowvec orders, double h, mat inflation,
     vec init_mean, mat init_var, 
     std::vector<vec> ob_list, const mat& H, errors ob_errs, 
     T model, linearize modelLinear, errors sys_vars
@@ -44,7 +44,7 @@ mat fEKF(
         if(!ob_list[i].is_empty()){
             // 非空的观测，需要同化
             vec mean = result.row(i).t();
-            mat var = former_vars[i];
+            mat var = former_vars[i] + inflation;
 
             mat gain = var * H.t() * arma::inv(H * var * H.t() + ob_errs[i]);
             mean += gain * (ob_list[i] - H * mean);

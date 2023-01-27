@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from metric import *
 
 sol = np.loadtxt("./data/lorenz63.csv")
 skewness = np.loadtxt("./data/skewness.csv")
@@ -22,6 +23,8 @@ plt.title("analysis")
 plt.show()
 # plt.savefig("./images/analysis.png")
 # plt.close()
+
+rmse_re(analysis, sol, "./data/rmse.csv", "./data/re.csv")
 
 error = analysis - sol
 ab_error = np.max(np.abs(error), axis=-1)
@@ -46,7 +49,7 @@ plt.show()
 # plt.close()
 
 error = np.linalg.norm(error, axis=-1)/np.linalg.norm(sol, axis=-1)
-error[error > 1] = 1
+error[error>1] = 1
 plt.plot(range(len(error)), error)
 plt.title("relatively error")
 plt.show()

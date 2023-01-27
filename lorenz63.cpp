@@ -455,7 +455,7 @@ void Lorenz63_EKf(){
     
     std::cout<<"EKF ready\n";
     auto ENKFResult = fEKF(
-        3, drowvec{1.,1.,1.}, config::dt,
+        3, drowvec{1.,1.,1.}, config::dt, 0.1*arma::eye(3,3),
         init_ave, init_var,
         ob_list, H, ob_errors,
         model, Lorenz63_linearize, sys_errors);
