@@ -3,7 +3,9 @@ import sys
 import matplotlib
 from matplotlib import pyplot as plt
 
-for folder in [sys.argv[1], sys.argv[2]]:
+plt.figure(figsize=[10,5])
+
+for folder in [sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]]:
     method = folder.split("/")[-2].split("_")[0]
     print("method: ", method)
     prefix1 = folder+"re"
@@ -16,15 +18,16 @@ for folder in [sys.argv[1], sys.argv[2]]:
         else:
             re_accumulated += one_re
     re_accumulated /= 10
+    plt.subplot(1,2,1)
     plt.plot(range(len(re_accumulated)), re_accumulated)
     print(re_accumulated[-1])
 plt.xlabel("number of iterations")
-plt.legend(labels=['fUKF','fEnKF'], loc='best')
+plt.legend(labels=['w=1','w=4','w=7','w=10','w=13'], loc='best')
 plt.title("MRE")
-plt.savefig("./images/lorenz63-MRE.png")
-plt.show()
+# plt.savefig("./images/fenkf-mre.png")
+# plt.show()
 
-for folder in [sys.argv[1], sys.argv[2]]:
+for folder in [sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]]:
     prefix2 = folder+"rmse"
     rmse_accumulated = None
     for i in range(1, 11):
@@ -38,10 +41,12 @@ for folder in [sys.argv[1], sys.argv[2]]:
     # plt.title(filename)
     # plt.show()
     rmse_accumulated /= 10
+    plt.subplot(1,2,2)
     plt.plot(range(len(rmse_accumulated)), rmse_accumulated)
     print(rmse_accumulated[-1])
 plt.xlabel("number of iterations")
-plt.legend(labels=['fUKF','fEnKF'], loc='best')
+plt.legend(labels=['w=1','w=4','w=7','w=10','w=13'], loc='best')
 plt.title("RMSE")
-plt.savefig("./images/lorenz63-RMSE.png")
+
+plt.savefig("./images/fenkf_w1-4-7-10-13.png")
 plt.show()

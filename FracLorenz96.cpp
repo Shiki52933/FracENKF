@@ -37,6 +37,8 @@ namespace config{
     double alpha, beta, k;
 
     int window_length = 10;
+    int enkf_window=10;
+    // drowvec orders(dim, arma::fill::ones);
     drowvec orders = randn<drowvec>(dim, distr_param(1., 1e-1));
     mat bino = compute_bino(orders, (int)200/dt);
 
@@ -263,7 +265,7 @@ void fractional_Lorenz96_EnKF(){
     // kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
 }
 
-void fractional_Lorenz96_EnKF_version2(){
+void fractional_Lorenz96_EnKF_version2(bool normal_test){
     // 参数
     int dim = config::dim;
     int ob_dim = config::ob_dim;
@@ -323,27 +325,49 @@ void fractional_Lorenz96_EnKF_version2(){
         sys_errors.add(sys_error_ptr);
     
     int ensemble_size = config::ensemble_size;
-    config::window_length = INT_MAX;
-    auto ENKFResult = accumulated_stochastic_ENKF(
-        dim, 10,
-        ensemble_size, num_iter, 0.1*arma::eye(dim,dim),
-        init_ave, init_var, 
-        ob_list, ob_errors, ob_op, 
-        fractional_Lorenz96_model, sys_errors
-        );
-    std::vector<vec>& analysis_ = ENKFResult;
-    std::cout<<"ENKF okay\n";
+    if(normal_test){
+        auto ENKF_normal = accumulated_stochastic_ENKF_normal_test(
+            dim, config::enkf_window,
+            ensemble_size, num_iter, 0.1*arma::eye(config::enkf_window*dim,config::enkf_window*dim),
+            init_ave, init_var, 
+            ob_list, ob_errors, ob_op, 
+            fractional_Lorenz96_model, sys_errors
+            );
+        std::vector<vec>& analysis_ = std::get<0>(ENKF_normal);
+        std::vector<double>& skewnesses = std::get<1>(ENKF_normal);
+        std::vector<double>& kurtosises = std::get<2>(ENKF_normal);
+        std::cout<<"ENKF okay\n";
 
-    mat analysis = arma::reshape(analysis_.back(), dim, analysis_.size()).t();
-    analysis = arma::reverse(analysis);
-    // arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    // for(int i=0; i<analysis.n_rows; i++){
-    //     for(int j=0; j<dim; j++){
-    //         analysis(i, j) = analysis_[i](j);
-    //     }
-    // }
+        mat analysis = arma::reshape(analysis_.back(), dim, analysis_.size()).t();
+        analysis = arma::reverse(analysis);
+        vec skewness_vec = vec(skewnesses);
+        vec kurtosis_vec = vec(kurtosises);
 
-    analysis.save("./data/analysis.csv", arma::raw_ascii);
+        analysis.save("./data/analysis.csv", arma::raw_ascii);
+        skewness_vec.save("./data/skewness.csv", arma::raw_ascii);
+        kurtosis_vec.save("./data/kurtosis.csv", arma::raw_ascii);
+    }else{
+        auto ENKFResult = accumulated_stochastic_ENKF(
+            dim, config::enkf_window,
+            ensemble_size, num_iter, 0.1*arma::eye(config::enkf_window*dim,config::enkf_window*dim),
+            init_ave, init_var, 
+            ob_list, ob_errors, ob_op, 
+            fractional_Lorenz96_model, sys_errors
+            );
+        std::vector<vec>& analysis_ = ENKFResult;
+        std::cout<<"ENKF okay\n";
+
+        mat analysis = arma::reshape(analysis_.back(), dim, analysis_.size()).t();
+        analysis = arma::reverse(analysis);
+        // arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
+        // for(int i=0; i<analysis.n_rows; i++){
+        //     for(int j=0; j<dim; j++){
+        //         analysis(i, j) = analysis_[i](j);
+        //     }
+        // }
+
+        analysis.save("./data/analysis.csv", arma::raw_ascii);
+    }
 }
 
 void fractional_Lorenz96_EKf(){
@@ -588,15 +612,18 @@ int main(int argc, char** argv){
     using namespace config;
 
     int version;
+    bool normal_test;
     std::string problem, sys_var_type;
 
     options_description cmd("fractional lorenz96 EnKF");
     cmd.add_options()("problem,p", value<std::string>(&problem)->default_value("ENKF"), "type: ENKF or Particle");
     cmd.add_options()("version,e", value<int>(&version)->default_value(1), "ENKF version");
+    cmd.add_options()("normal_test", value<bool>(&normal_test)->default_value(false), "ENKF normal test");
     cmd.add_options()("dim,d", value<int>(&dim)->default_value(40), "dimension of system");
     cmd.add_options()("ob_dim,o", value<int>(&ob_dim)->default_value(8), "ob dimension");
     cmd.add_options()("F,F", value<double>(&F)->default_value(8.0), "F");
-    cmd.add_options()("window,w", value<int>(&window_length)->default_value(10), "window length");
+    cmd.add_options()("window", value<int>(&window_length)->default_value(INT_MAX), "window length");
+    cmd.add_options()("enkf_window,w", value<int>(&enkf_window)->default_value(10), "enkf window length");
     cmd.add_options()("ob_var,b", value<double>(&ob_var)->default_value(0.1), "ob_error");
     cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(5), "system_error");
     cmd.add_options()("sys_var_type,y", value<std::string>(&sys_var_type)->default_value("real"), "system_error_type");
@@ -629,7 +656,7 @@ int main(int argc, char** argv){
         if(version == 1)
             fractional_Lorenz96_EnKF();
         else if(version == 2)
-            fractional_Lorenz96_EnKF_version2();
+            fractional_Lorenz96_EnKF_version2(normal_test);
     }
     else if(problem == "EKF")
         fractional_Lorenz96_EKf();
@@ -641,6 +668,7 @@ int main(int argc, char** argv){
     std::cout<<"problem type: "<<problem<<'\n'
             <<"version: "<<version<<'\n'
             <<"window: "<<window_length<<'\n'
+            <<"enkf window: "<<enkf_window<<"\n"
             <<"dim: "<<dim<<'\n'
             <<"ob_dim: "<<ob_dim<<'\n'
             <<"F: "<<F<<'\n'

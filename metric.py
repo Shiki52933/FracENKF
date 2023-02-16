@@ -7,16 +7,21 @@ def rmse_re(analysis:np.ndarray, sol:np.ndarray, rmse_file:str, re_file:str):
 
     cumsumed = np.cumsum(error_norm ** 2, axis=0)
     pre_rmse = cumsumed / np.arange(1, len(cumsumed)+1)
+    plt.figure(figsize=(8,4))
+    plt.subplot(1,2,2)
     plt.plot(range(len(pre_rmse)), np.sqrt(pre_rmse))
     plt.title("rmse")
-    plt.show()
+    plt.xlabel("number of iterations")
     np.savetxt(rmse_file, np.sqrt(pre_rmse))
 
     sol_norm = np.linalg.norm(sol, axis=1)
     re_norm = error_norm / sol_norm
     pre_re = np.cumsum(re_norm, axis=0)
     re = pre_re / np.arange(1, len(pre_re)+1)
+    plt.subplot(1,2,1)
     plt.plot(range(len(re)), re)
     plt.title("relative error")
+    plt.xlabel("number of iterations")
     plt.show()
+
     np.savetxt(re_file, re)

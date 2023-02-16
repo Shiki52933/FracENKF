@@ -37,13 +37,13 @@ rmse_re(analysis, sol, "./data/rmse.csv", "./data/re.csv")
 # plt.show()
 
 
-# plt.plot(range(len(skewness)), skewness)
-# plt.title("skewness")
-# plt.show()
+plt.plot(range(len(skewness)), skewness)
+plt.title("skewness")
+plt.show()
 
-# plt.plot(range(len(kurtosis)), kurtosis)
-# plt.title("kurtosis")
-# plt.show()
+plt.plot(range(len(kurtosis)), kurtosis)
+plt.title("kurtosis")
+plt.show()
 
 # error = np.linalg.norm(error, axis=-1)/(np.linalg.norm(sol, axis=-1) + 1e-6)
 # error[ error > 1 ] = 1
