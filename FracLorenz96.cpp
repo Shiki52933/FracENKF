@@ -42,6 +42,10 @@ namespace config{
     drowvec orders = randn<drowvec>(dim, distr_param(1., 1e-1));
     mat bino = compute_bino(orders, (int)200/dt);
 
+    int inverse_window = 10;
+    double inverse = 0.8;
+    mat inverse_bino = compute_bino(drowvec(dim, arma::fill::value(inverse)), (int)200/dt); 
+
     double ob_var = 0.01;
     double sys_var = 0.01, real_sys_var = 0.;
     double init_var_ = 10;
@@ -115,6 +119,80 @@ mat fractional_Lorenz96_model(const mat& ensemble, int idx, const mat& sys_var){
         mat ret(ensemble.n_rows, ensemble.n_cols, arma::fill::none);
         ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - frac_dirivative;
         ret.submat(dim,0,ret.n_rows-1,ret.n_cols-1) = ensemble.submat(0,0,ensemble.n_rows-dim-1,ensemble.n_cols-1);
+        return ret;
+    }
+}
+
+mat fractional_lorenz96_inverse(const mat& ensemble, int idx, const mat& sys_var){
+    // 先系统状态，再导数阶数
+    // 从上到下时间从近到远
+    int dim = config::dim;
+    int current_inverse_window = ensemble.n_rows <= 2*dim*config::inverse_window ? ensemble.n_rows/dim/2 : config::inverse_window;
+    int window = ensemble.n_rows / dim - current_inverse_window;
+
+    // 计算二项式系数
+    // 首先计算分数阶导数
+    mat frac_dirivative(dim, ensemble.n_cols, arma::fill::zeros);
+    for(int j=0; j<ensemble.n_cols; ++j){
+        mat bino = compute_bino(ensemble.submat(dim*window,j,dim*(window+1)-1,j).t(), window+3);
+        for(int i=0; i<window; i++){
+            for(int idx=0; idx<dim; idx++){
+                frac_dirivative(idx, j) += ensemble(i*dim+idx, j) * bino(i+1, idx);
+            }
+        }
+    }
+    mat frac_dirivative_inverse(dim, ensemble.n_cols, arma::fill::zeros);
+    for(int i=0; i<current_inverse_window; i++){
+        for(int idx=0; idx<dim; idx++){
+            frac_dirivative_inverse.row(idx) += ensemble.row((i+window)*dim+idx) * config::inverse_bino(i+1, idx);
+        }
+    }
+
+    // 计算右端项
+    mat rhs(dim, ensemble.n_cols, arma::fill::none);
+    for(int i=0; i<dim; i++){
+        int pre = (i + dim - 1) % dim;
+        int far = (i + dim - 2) % dim;
+        int next = (i + 1) % dim;
+
+        rhs.row(i) = ensemble.row(pre) % (ensemble.row(next) - ensemble.row(far)) - ensemble.row(i) + config::F;
+    }
+    config::add_all_time(rhs, sys_var.submat(0,0,dim-1,dim-1));
+
+    mat orders_rhs(dim,ensemble.n_cols, arma::fill::zeros);
+    config::add_all_time(orders_rhs, sys_var.submat(dim,dim,dim*2-1,dim*2-1));
+
+    for(int j=0; j<ensemble.n_cols; ++j){
+        for(int i=0; i<dim; ++i)
+            rhs(i,j) *= pow(config::dt, ensemble(window*dim+i, j));
+    }
+    for(int i=0; i<dim; i++){
+        orders_rhs.row(i) *= pow(config::dt, config::inverse);
+    }
+
+    if(window < config::window_length){
+        if(current_inverse_window < config::inverse_window){
+            mat ret(dim*(window+current_inverse_window+2), ensemble.n_cols, arma::fill::none);
+            ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - frac_dirivative;
+            ret.submat(dim,0,dim*(window+1)-1,ret.n_cols-1) = ensemble.submat(0,0,dim*window-1,ensemble.n_cols-1);
+            ret.submat(dim*(window+1),0,dim*(window+2)-1,ret.n_cols-1) = orders_rhs - frac_dirivative_inverse;
+            ret.submat(dim*(window+2),0,ret.n_rows-1,ret.n_cols-1) = ensemble.submat(dim*window,0,ensemble.n_rows-1,ensemble.n_cols-1);
+            return ret;
+        }else{
+            mat ret(dim*(window+current_inverse_window+1), ensemble.n_cols, arma::fill::none);
+            ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - frac_dirivative;
+            ret.submat(dim,0,dim*(window+1)-1,ret.n_cols-1) = ensemble.submat(0,0,dim*window-1,ensemble.n_cols-1);
+            ret.submat(dim*(window+1),0,dim*(window+2)-1,ret.n_cols-1) = orders_rhs - frac_dirivative_inverse;
+            ret.submat(dim*(window+2),0,ret.n_rows-1,ret.n_cols-1) = ensemble.submat(dim*window,0,ensemble.n_rows-dim-1,ensemble.n_cols-1);
+            return ret;
+        }
+
+    }else{
+        mat ret(ensemble.n_rows, ensemble.n_cols, arma::fill::none);
+        ret.submat(0,0,dim-1,ensemble.n_cols-1) = rhs - frac_dirivative;
+        ret.submat(dim,0,dim*window-1,ret.n_cols-1) = ensemble.submat(0,0,dim*(window-1)-1,ensemble.n_cols-1);
+        ret.submat(dim*window,0,dim*(window+1)-1,ret.n_cols-1) = orders_rhs - frac_dirivative_inverse;
+        ret.submat(dim*(window+1),0,ret.n_rows-1,ret.n_cols-1) = ensemble.submat(dim*window,0,ensemble.n_rows-dim-1,ensemble.n_cols-1);
         return ret;
     }
 }
@@ -368,6 +446,105 @@ void fractional_Lorenz96_EnKF_version2(bool normal_test){
 
         analysis.save("./data/analysis.csv", arma::raw_ascii);
     }
+}
+
+void fractional_Lorenz96_inverse_EnKF_version2(bool normal_test){
+    // 参数
+    int dim = config::dim;
+    int ob_dim = config::ob_dim;
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // ob算子
+    mat H = arma::randn(ob_dim, dim);
+    auto H_ob = [&H, &dim](const mat& ensemble) -> mat {
+        // std::cout<<"ensemble n_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        if(ensemble.n_rows == dim){
+            return H * ensemble;
+        }else{
+            // std::cout<<"start multiplication\n";
+            mat real_time = ensemble.submat(0, 0, dim-1, ensemble.n_cols-1);
+            mat ret = H * real_time;
+            // std::cout<<"end multiplication\n";
+            return ret;
+        }
+    };
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    vec v0 = arma::randn(dim);
+    mat ref = generate_fractional_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
+    mat all_ob = H_ob(ref.t());
+    ref.save("./data/lorenz96.csv", arma::raw_ascii);
+    // 初始值
+    vec init_ave(dim*2, arma::fill::zeros);
+    for(int i=dim; i<dim*2; ++i)    init_ave(i) = config::orders(i-dim);
+    // init_ave = v0;
+    mat init_var(dim*2, dim*2, arma::fill::eye);
+    for(int i=0; i<dim; ++i)
+        init_var(i,i) *= init_var_;
+    for(int i=dim; i<dim*2; ++i)
+        init_var(i,i) *= 0.0;
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim, arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    //std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    
+    errors sys_errors;
+    auto enkf_sys_error_ptr = std::make_shared<mat>(dim*2, dim*2, arma::fill::eye);
+    for(int i=0; i<dim; ++i)
+        (*enkf_sys_error_ptr)(i,i) *= sys_var;
+    for(int i=dim; i<dim*2; ++i)
+        (*enkf_sys_error_ptr)(i,i) *= 0e-4;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(enkf_sys_error_ptr);
+    
+    int ensemble_size = config::ensemble_size;
+    auto ENKFResult = accumulated_stochastic_ENKF_inverse(
+        dim, config::enkf_window, config::inverse_window,
+        ensemble_size, num_iter, 0.1*arma::eye((config::inverse_window+config::enkf_window)*dim,(config::inverse_window+config::enkf_window)*dim),
+        init_ave, init_var, 
+        ob_list, ob_errors, ob_op, 
+        fractional_lorenz96_inverse, sys_errors
+        );
+    std::vector<vec>& analysis_ = ENKFResult;
+    std::cout<<"ENKF okay\n";
+
+    vec last_one = analysis_.back();
+    last_one = last_one.subvec(0, last_one.n_rows-dim*config::inverse_window-1);
+    mat analysis = arma::reshape(last_one, dim, analysis_.size()).t();
+    analysis = arma::reverse(analysis);
+
+    // std::cout<<last_one.n_rows<<"\t"<<dim<<"\t"<<analysis_.size()<<"\n";
+
+    arma::mat orders(analysis_.size(), dim, arma::fill::none);
+    for(int i=0; i<orders.n_rows; i++){
+        for(int j=0; j<dim; j++){
+            orders(i, j) = analysis_[i]((i+1)*dim+j);
+        }
+    }
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+    vec real_orders = config::orders.subvec(0,dim-1).t();
+    real_orders.save("./data/real_orders.csv", arma::raw_ascii);
+    orders.save("./data/analysis_orders.csv", arma::raw_ascii);
 }
 
 void fractional_Lorenz96_EKf(){
@@ -662,6 +839,8 @@ int main(int argc, char** argv){
         fractional_Lorenz96_EKf();
     else if(problem == "UKF")
         fractional_Lorenz96_UKf();
+    else if(problem == "inverse")
+        fractional_Lorenz96_inverse_EnKF_version2(false);
     else
         throw std::runtime_error("not supported filter algorithm");
 

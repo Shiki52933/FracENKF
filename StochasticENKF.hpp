@@ -35,6 +35,11 @@ typedef mat (*dynamic_model)(mat& ensembleAnalysis, int idx, mat& sysVar);
 extern double compute_skewness(const mat& ensemble);
 extern double compute_kurtosis(const mat& ensemble);
 
+template<typename T>
+inline static T min(T a, T b){
+    return a < b ? a : b;
+}
+
 template<typename T, typename S>
 std::tuple<std::vector<vec>, std::vector<double>, std::vector<double>> 
 stochastic_ENKF_normal_test(
@@ -217,6 +222,84 @@ accumulated_stochastic_ENKF(
             mat gain = (x_f * y_f.t() + H_inflation.t()) * pinv(temp);
             // 更新集合
             ensemble.submat(0,0,last_row-1,ensemble.n_cols-1) += gain * auxiliary;
+        }else{
+            ensemble = ensemble;
+        }
+
+        // 储存结果
+        res.push_back(vec(mean(ensemble, 1)));
+
+        // 如果不是最后一步，就往前推进
+        if(i != iters_num-1)
+            ensemble = model(ensemble, i, sys_errors[i]);
+    }
+
+    return res;
+}
+
+template<typename T, typename S>
+std::vector<vec> 
+accumulated_stochastic_ENKF_inverse(
+    int state_dim, int time_dim, int inverse_window,
+    int ensemble_size, int iters_num, mat inflation,
+    vec init_average, mat init_uncertainty, 
+    std::vector<vec>& ob_results, errors& ob_errors, T ob_op, 
+    S model, errors& sys_errors
+    ){
+    // 初始化
+    std::vector<vec> res;
+    mat ensemble = arma::mvnrnd(init_average, init_uncertainty, ensemble_size);
+
+    for(int i=0; i<iters_num; i++){
+        std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols;
+        std::cout<<"\tstate dimension: "<<state_dim<<"\ttime dimension: "<<time_dim<<"\n";
+
+        if(!ob_results[i].is_empty()){
+            int ob_size = ob_results[i].size();
+            // 如果这个时刻有观测，则进行同化和修正
+            // 生成扰动后的观测
+            mat temp, perturb(ob_size, ensemble_size, arma::fill::zeros);
+            if(arma::inv(temp, ob_errors[i]))
+                perturb = arma::mvnrnd(vec(ob_size, arma::fill::zeros), ob_errors[i], ensemble_size);
+            mat after_perturb = perturb.each_col() + ob_results[i];
+
+            // 获取真正参与ENKF的部分
+            int last_row, first_row;
+            if(ensemble.n_rows <= 2 * state_dim * inverse_window){
+                last_row = ensemble.n_rows / 2;
+                first_row = last_row;
+                last_row = min(state_dim * time_dim, last_row);
+            }else{
+                first_row = ensemble.n_rows - state_dim * inverse_window;
+                last_row = min(state_dim * time_dim, first_row);
+            }
+            mat to_enkf(last_row+ensemble.n_rows-first_row, ensemble.n_cols, arma::fill::none);
+            to_enkf.submat(0,0,last_row-1,to_enkf.n_cols-1) = ensemble.submat(0,0,last_row-1,ensemble.n_cols-1);
+            to_enkf.submat(last_row,0,to_enkf.n_rows-1,to_enkf.n_cols-1) = ensemble.submat(first_row,0,ensemble.n_rows-1,ensemble.n_cols-1);
+
+            // 平均值
+            mat ensemble_mean = mean(to_enkf, 1);
+            mat perturb_mean = mean(perturb, 1);
+
+            // 为了符合算法说明，暂且用下划线
+            // 观测后集合
+            mat y_f = ob_op(ensemble);
+            
+            mat x_f = (to_enkf.each_col() - ensemble_mean) / sqrt(ensemble_size - 1);
+            mat y_mean = mean(y_f, 1);
+
+            mat auxiliary = after_perturb - y_f;
+            temp = y_f - perturb;
+            y_f = (temp.each_col() - (y_mean - perturb_mean)) / sqrt(ensemble_size - 1);
+
+            // 计算增益矩阵
+            mat H_inflation = ob_op(inflation.submat(0,0,to_enkf.n_rows-1,to_enkf.n_rows-1));
+            temp = y_f * y_f.t() + ob_op(H_inflation.t());
+            mat gain = (x_f * y_f.t() + H_inflation.t()) * pinv(temp);
+            // 更新集合
+            to_enkf += gain * auxiliary;
+            ensemble.submat(0,0,last_row-1,ensemble.n_cols-1) = to_enkf.submat(0,0,last_row-1,to_enkf.n_cols-1);
+            ensemble.submat(first_row,0,ensemble.n_rows-1,ensemble.n_cols-1) = to_enkf.submat(last_row,0,to_enkf.n_rows-1,to_enkf.n_cols-1);
         }else{
             ensemble = ensemble;
         }
