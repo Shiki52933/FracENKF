@@ -807,8 +807,8 @@ int main(int argc, char** argv){
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
     cmd.add_options()("real_sys_var,r", value<double>(&real_sys_var)->default_value(1.), "real_system_error");
     cmd.add_options()("alpha,a", value<double>(&alpha)->default_value(0.5), "alpha for UKF");
-    cmd.add_options()("beta", value<double>(&beta)->default_value(2), "beta for UKF");
-    cmd.add_options()("k,k", value<double>(&k)->default_value(3-dim), "k for UKF");
+    cmd.add_options()("beta", value<double>(&beta)->default_value(2), "beta for UKF");//-2
+    cmd.add_options()("k,k", value<double>(&k)->default_value(3-dim), "k for UKF");//0
     cmd.add_options()("select,s", value<int>(&select_every)->default_value(10), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
     cmd.add_options()("max_time,t", value<double>(&t_max)->default_value(20), "max time");

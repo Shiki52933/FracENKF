@@ -3,6 +3,7 @@
 #include "3DVar.hpp"
 #include "fUKF.hpp"
 #include "fEKF.hpp"
+#include "gEnKF.hpp"
 #include <armadillo>
 #include <iostream>
 #include <boost/program_options.hpp>
@@ -50,6 +51,7 @@ namespace config{
     double ob_var = 1;
     double sys_var = 0.01, real_sys_var = 0.;
     double init_var_ = 10;
+    double local_var = 0.01;
     int select_every = 10;
 
     int ensemble_size = 20;
@@ -465,6 +467,80 @@ void Lorenz63_EKf(){
     analysis.save("./data/analysis.csv", arma::raw_ascii);
 }
 
+
+void Lorenz63_gEnKf(){
+    // 参数
+    double ob_var = config::ob_var;
+    double sys_var = config::sys_var;
+    double init_var_ = config::init_var_;
+    int select_every = config::select_every;
+    // 系统误差
+    auto sys_error_ptr = std::make_shared<mat>(3, 3, arma::fill::eye);
+    *sys_error_ptr *= sys_var;
+    // 参考解
+    vec v0 = randn(3);
+    mat ref = generate_Lorenz63(config::sigma, config::rho, config::beta, config::dt, config::max_time, v0, *sys_error_ptr*config::real_sys_var);
+    
+    mat H = arma::randn(2, 3);
+    auto H_ob = [&H](const mat& ensemble){
+        return H * ensemble;
+    };
+    mat all_ob = H_ob(ref);
+    // 初始值
+    int ensemble_size = config::ensemble_size;
+    vec init_ave{0., 0., 0.};
+    mat init_var(3, 3, arma::fill::eye);
+    init_var *= init_var_;
+
+    mat ensemble = arma::mvnrnd(init_ave, init_var, ensemble_size);
+    std::vector<mat> vars;
+    for(int i=0; i<ensemble_size; ++i){
+        vars.push_back(config::local_var*arma::eye(3, 3));
+    }
+    // ob
+    auto ob_op = H_ob;
+    auto error_ptr = std::make_shared<mat>(2, 2, arma::fill::eye);
+    *error_ptr *= ob_var;
+
+    std::vector<vec> ob_list;
+    errors ob_errors;
+
+    for(int i=0; i<all_ob.n_cols; i++){
+        // std::cout<<"in for\n";
+        ob_errors.add(error_ptr);
+        if(i%select_every == 0)
+            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(2,arma::fill::zeros), *error_ptr));
+        else
+            ob_list.push_back(vec());
+    }
+    //std::cout<<"ob-list okay\n";
+    // 迭代次数
+    int num_iter = ob_list.size();
+    std::cout<<num_iter<<std::endl;
+    
+    errors sys_errors;
+    for(int i=0; i<num_iter+1; i++)
+        sys_errors.add(sys_error_ptr);
+    
+    auto ENKFResult = group_ENKF(
+        num_iter, config::dt,
+        ensemble, vars, 
+        ob_list, H, ob_errors, 
+        model, Lorenz63_linearize, sys_errors
+        );
+    std::vector<vec>& analysis_ = ENKFResult;
+    std::cout<<"gENKF okay\n";
+
+    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
+    for(int i=0; i<analysis.n_rows; i++){
+        analysis(i, 0) = analysis_[i](0);
+        analysis(i, 1) = analysis_[i](1);
+        analysis(i, 2) = analysis_[i](2);
+    }
+
+    analysis.save("./data/analysis.csv", arma::raw_ascii);
+}
+
 int main(int argc, char** argv){
     using namespace boost::program_options;
     using namespace config;
@@ -479,6 +555,7 @@ int main(int argc, char** argv){
     cmd.add_options()("ob_var,o", value<double>(&ob_var)->default_value(0.1), "ob_error");
     cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(0.1), "system_error");
     cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
+    cmd.add_options()("local_var,l", value<double>(&local_var)->default_value(0.01), "local_var for gENKF");
     cmd.add_options()("real_sys_var,y", value<double>(&real_sys_var)->default_value(1), "real_system_error");
     cmd.add_options()("select,c", value<int>(&select_every)->default_value(10), "select every");
     cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
@@ -500,6 +577,8 @@ int main(int argc, char** argv){
         Lorenz63_UKf();
     else if(problem == "EKF")
         Lorenz63_EKf();
+    else if(problem == "gENKF")
+        Lorenz63_gEnKf();
     else
         throw std::runtime_error("not supported filter algorithm");
 
@@ -511,6 +590,7 @@ int main(int argc, char** argv){
             <<"ob_var: "<<ob_var<<'\n'
             <<"sys_var: "<<sys_var<<'\n'
             <<"real_sys_var: "<<real_sys_var<<'\n'
+            <<"local var: "<<local_var<<'\n'
             <<"select every: "<<select_every<<'\n'
             <<"ensemble size: "<<ensemble_size<<'\n'
             <<"max time: "<<max_time<<'\n';

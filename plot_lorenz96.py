@@ -23,8 +23,14 @@ plt.show()
 
 rmse_re(analysis, sol, "./data/rmse.csv", "./data/re.csv")
 
-# error = analysis - sol
+error = analysis - sol
 # ab_error = np.max(np.abs(error), axis=-1)
+
+# fig = plt.figure()
+# ax1 = plt.axes(projection='3d')
+# ax1.plot3D(error[:,0], error[:,1], error[:,2], 'gray') 
+# plt.title("error")
+# plt.show()
 
 # fig = plt.figure()
 # ax1 = plt.axes(projection='3d')
@@ -37,13 +43,13 @@ rmse_re(analysis, sol, "./data/rmse.csv", "./data/re.csv")
 # plt.show()
 
 
-plt.plot(range(len(skewness)), skewness)
-plt.title("skewness")
-plt.show()
+# plt.plot(range(len(skewness)), skewness)
+# plt.title("skewness")
+# plt.show()
 
-plt.plot(range(len(kurtosis)), kurtosis)
-plt.title("kurtosis")
-plt.show()
+# plt.plot(range(len(kurtosis)), kurtosis)
+# plt.title("kurtosis")
+# plt.show()
 
 # error = np.linalg.norm(error, axis=-1)/(np.linalg.norm(sol, axis=-1) + 1e-6)
 # error[ error > 1 ] = 1
