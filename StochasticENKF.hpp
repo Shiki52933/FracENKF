@@ -167,6 +167,59 @@ stochastic_ENKF(
     return res;
 }
 
+template<typename T>
+std::vector<vec>
+stochastic_ENKF(
+    int ensemble_size, int iters_num,
+    vec init_average, mat init_uncertainty, 
+    std::vector<vec>& ob_results, mat ob_op, errors& ob_errors,
+    T model, errors& sys_errors
+    ){
+    // 初始化
+    std::vector<vec> res;
+    mat ensemble = arma::mvnrnd(init_average, init_uncertainty, ensemble_size);
+
+    for(int i=0; i<iters_num; i++){
+        // std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        mat ensemble_analysis;
+
+        if(!ob_results[i].is_empty()){
+            int ob_size = ob_results[i].size();
+            // 如果这个时刻有观测，则进行同化和修正
+            // 生成扰动后的观测
+            mat temp, perturb(ob_size, ensemble_size, arma::fill::zeros);
+            if(arma::inv(temp, ob_errors[i]))
+                perturb = arma::mvnrnd(vec(ob_size, arma::fill::zeros), ob_errors[i], ensemble_size);
+            mat after_perturb = perturb.each_col() + ob_results[i];
+
+            // 为了符合算法说明，暂且用下划线
+            // 观测后集合
+            mat ensemble_mean = mean(ensemble, 1);
+            mat x_f = (ensemble.each_col() - ensemble_mean) / sqrt(ensemble_size - 1);
+            mat P_f = x_f * x_f.t();
+
+            mat y_f = ob_op * ensemble;
+            mat auxiliary = after_perturb - y_f;
+
+            // 计算增益矩阵
+            mat gain = P_f * ob_op.t() * inv(ob_op * P_f * ob_op.t() + ob_errors[i]);
+            // 更新集合
+            ensemble_analysis = ensemble + gain * auxiliary;
+        }else{
+            ensemble_analysis = ensemble;
+        }
+
+        // 储存结果
+        res.push_back(vec(mean(ensemble_analysis, 1)));
+
+        // 如果不是最后一步，就往前推进
+        if(i != iters_num-1)
+            ensemble = model(ensemble_analysis, i, sys_errors[i]);
+    }
+
+    return res;
+}
+
 template<typename T, typename S>
 std::vector<vec> 
 accumulated_stochastic_ENKF(

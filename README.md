@@ -26,3 +26,7 @@ g++ Simple.cpp -l armadillo -l boost_program_options -O3 -o ./build/Simple
  g++ FracLorenz63test.cpp -l armadillo -l boost_program_options -O3 -o FracLorenz63test
 
  g++ lorenz63test.cpp -l armadillo -l boost_program_options -O3 -o lorenz63test
+
+
+ ./build/lorenz96 -p gENKF -l 0.1 -o 10 -n 10 -r 0.1 -v 0.1 
+ ENKF -n 60
