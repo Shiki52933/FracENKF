@@ -8,6 +8,8 @@
 #include <thread>
 #include <memory>
 #include <math.h>
+#include <limits>
+
 
 namespace shiki{
 
@@ -121,7 +123,7 @@ stochastic_ENKF(
     mat ensemble = arma::mvnrnd(init_average, init_uncertainty, ensemble_size);
 
     for(int i=0; i<iters_num; i++){
-        std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
+        // std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
         mat ensemble_analysis;
 
         if(!ob_results[i].is_empty()){
@@ -511,5 +513,30 @@ mat compute_bino(drowvec orders, int n){
 
     return bino;
 }
+
+
+void print_singular_values(const mat &var){
+    arma::rowvec svd = arma::svd(var).t();
+    double sum = arma::accu(svd);
+        
+    // std::cout<<"biggest svd: "<<svd[0]<<'\t'<<"smallest svd: "<<svd[svd.n_rows-1]<<std::endl;
+    // std::cout<<svd.t()<<std::endl;
+    std::cout<<arma::cumsum(svd)/sum;
+
+}
+
+void print_singular_values(const std::vector<mat> &vars){
+    double singular_max = -1;
+    double singular_min = std::numeric_limits<double>().max();
+
+    for(const mat &var: vars){
+        vec svd = arma::svd(var);
+        singular_max = std::max(singular_max, svd[0]);
+        singular_min = std::min(singular_min, svd[svd.n_rows-1]);
+    }
+    std::cout<<"biggest svd: "<<singular_max<<'\t'<<"smallest svd: "<<singular_min<<std::endl;
+}
+
+
 
 }

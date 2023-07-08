@@ -38,9 +38,9 @@ ab_error = np.linalg.norm(error, axis=-1)
 # plt.title("analysis 3 components")
 # plt.show()
 
-# plt.plot(range(len(ab_error)), ab_error)
-# plt.title("absolutely error")
-# plt.show()
+plt.plot(range(len(ab_error)), ab_error)
+plt.title("absolutely error")
+plt.show()
 
 
 # plt.plot(range(len(skewness)), skewness)
