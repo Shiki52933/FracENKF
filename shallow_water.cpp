@@ -25,7 +25,7 @@ double quadratic_approximation(
     }
 }
 
-const double g = 2;
+const double g = 9;
 
 enum class BoundaryCondition{
     Periodic,
@@ -363,7 +363,7 @@ void init(arma::vec &uvh, Structure2d &s){
 void test_shallow_water(){
     double t = 0;
     double delta_t = 1e-3;
-    Structure2d structure(-2.5, 2.5, 513, -2.5, 2.5, 513, 3);
+    Structure2d structure(-2.5, 2.5, 129, -2.5, 2.5, 129, 3);
 
     arma::vec sol;
     structure.allocate_fields(sol);
@@ -377,7 +377,7 @@ void test_shallow_water(){
         sol = model(t, delta_t, sol, structure);
         t += delta_t;
         std::cout<<"t= "<<t<<std::endl;
-        sol.save("./data/shallowwater/sol" + std::to_string(t) + ".csv", arma::raw_ascii);
+        sol.save("./data/shallowwater/sol" + std::to_string(t) + ".bin", arma::raw_binary);
     }
 }
 
