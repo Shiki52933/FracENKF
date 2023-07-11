@@ -10,40 +10,51 @@ import sys
 import time
 
 # read the data
-def read_data(filename, cols, rows):
+def read_data(filename, cols, rows, dof):
     data = np.fromfile(filename, dtype=np.float64)
-    data.shape = [3, cols, rows]
-    return data
+    data.shape = [int(sys.argv[3]), cols, rows]
+    return data[dof].transpose()
 
-first_time = True
+
 # plot the solution
-def plot_solution(data, dof):
-    global first_time
+def plot_solution(datas, t, dof):
+    first_time = True
+    critical_times = [0, 350, 510, 650]
     # u,v,h are matrix, plot them in a figure
-    plt.imshow(data[dof], cmap='jet', interpolation='nearest')
-    if first_time:
-        print("plotting")
-        plt.ion()
-        plt.show()
-    # plt.savefig(filename)
-    sys.stdout.flush()
-    print('.')
-    plt.pause(0.001)
-    first_time = False
+    for i, data in enumerate(datas):
+        plt.imshow(data, cmap='jet', interpolation='none')
+        plt.colorbar()
+        if first_time:
+            print("plotting")
+            plt.ion()
+            plt.show()
+        # plt.savefig(filename)
+        sys.stdout.flush()
+        print("time = ", t[i][3:-4])
+        if(int(float(t[i][3:-4])) in critical_times):
+            plt.pause(5)
+        plt.pause(0.01)
+        plt.clf()
+        first_time = False
 
 
 # main function
 def main():
-    # read the data
-    data_dir = './data/shallowwater/'
+    # read the data 
+    data_dir = sys.argv[5]
     data_files = os.listdir(data_dir)
-    data_files.sort()
+    data_files.sort(key=lambda x:float(x[3:-4]))
+    # data_files = data_files[0:-1]
+    # data_files.sort()
+    
+    datas = []
     for data_file in data_files:
-        data = read_data(data_dir + data_file, 129, 129)
-        # plot the solution
-        # image_dir = './images/shallowwater/'
-        # image_file = image_dir + data_file[:-4] + '.png'
-        plot_solution(data, int(sys.argv[1]))
+        data = read_data(data_dir + data_file, int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[4]))
+        datas.append(data)
+        
+    # plot the solution    
+    plot_solution(datas, data_files, int(sys.argv[4]))
+    plt.close()
     
 if __name__ == '__main__':
     main()

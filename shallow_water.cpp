@@ -3,6 +3,7 @@
 #include <limits>
 #include <cmath>
 #include <assert.h>
+#include <boost/program_options.hpp>
 
 using namespace shiki;
 
@@ -25,7 +26,8 @@ double quadratic_approximation(
     }
 }
 
-const double g = 9;
+double g = 9;
+double ave_h = 1;
 
 enum class BoundaryCondition{
     Periodic,
@@ -79,6 +81,9 @@ public:
     // k: field index
     // x axis is flipped
     inline double& operator()(arma::vec &fields, int i, int j, int k){
+        // assert(i >= 0 && i < m_grid_y);
+        // assert(j >= 0 && j < m_grid_x);
+        // assert(k >= 0 && k < m_unknowns);
         return fields(k*m_grid_y*m_grid_x + j*m_grid_y + i);
     }
 
@@ -89,6 +94,12 @@ public:
         int yi, int yj, int yk,
         double value
         ){
+        // assert(fi >= 0 && fi < m_grid_y);
+        // assert(fj >= 0 && fj < m_grid_x);
+        // assert(fk >= 0 && fk < m_unknowns);
+        // assert(yi >= 0 && yi < m_grid_y);
+        // assert(yj >= 0 && yj < m_grid_x);
+        // assert(yk >= 0 && yk < m_unknowns);
         jacobian(fk*m_grid_y*m_grid_x + fj*m_grid_y + fi, yk*m_grid_y*m_grid_x + yj*m_grid_y + yi) = value;
         }
     
@@ -97,8 +108,24 @@ public:
         int fi, int fj, int fk,
         int yi, int yj, int yk
         ){
+        // assert(fi >= 0 && fi < m_grid_y);
+        // assert(fj >= 0 && fj < m_grid_x);
+        // assert(fk >= 0 && fk < m_unknowns);
+        // assert(yi >= 0 && yi < m_grid_y);
+        // assert(yj >= 0 && yj < m_grid_x);
+        // assert(yk >= 0 && yk < m_unknowns);
         return jacobian(fk*m_grid_y*m_grid_x + fj*m_grid_y + fi, yk*m_grid_y*m_grid_x + yj*m_grid_y + yi);
         }
+
+    double average_h(arma::vec& fields){
+        double sum = 0;
+        for(int i = 0; i < m_grid_y; i++){
+            for(int j = 0; j < m_grid_x; j++){
+                sum += (*this)(fields, i, j, 2);
+            }
+        }
+        return sum / (m_grid_x * m_grid_y);
+    }
 };
 
 
@@ -114,29 +141,51 @@ arma::vec form_Ifunction(
     using std::pow;
     arma::vec i_left(Y.n_rows, arma::fill::none);
 
+    // write a lambda function to access normal fields or ghost fields
+    auto access = [&s](arma::vec& f, int i, int j, int k){
+        double flip = 1;
+        if(i < 0){
+            i = 1;
+            if(k == 1){
+                flip = -1;
+            }
+        }else if(i >= s.m_grid_y){
+            i = s.m_grid_y - 2;
+            if(k == 1){
+                flip = -1;
+            }
+        }else if(j < 0){
+            j = 1;
+            if(k == 0){
+                flip = -1;
+            }
+        }else if(j >= s.m_grid_x){
+            j = s.m_grid_x - 2;
+            if(k == 0){
+                flip = -1;
+            }
+        }
+
+        return flip * s(f, i, j, k);
+    };
+
     for(int j=0; j<s.m_grid_x; j++){
         for(int i=0; i<s.m_grid_y; i++){
-            if(i == 0 or i == s.m_grid_y-1 or j == 0 or j == s.m_grid_x-1){
-                s(i_left,i,j,0) = s(Y,i,j,0);
-                s(i_left,i,j,1) = s(Y,i,j,1);
-                s(i_left,i,j,2) = s(Y,i,j,2)-1;
-                continue;
-            }
-
-            s(i_left,i,j,0) = s(Y,i,j,0)*s(Ydot,i,j,2) + s(Y,i,j,2)*s(Ydot,i,j,0);
-            s(i_left,i,j,0) += 1./(2*dx) * ( pow(s(Y,i,j+1,0),2)*s(Y,i,j+1,2) + 0.5*g*pow(s(Y,i,j+1,2),2)
-                                            -pow(s(Y,i,j-1,0),2)*s(Y,i,j-1,2) - 0.5*g*pow(s(Y,i,j-1,2),2))
-                              + 1./(2*dy) * (-s(Y,i+1,j,0)*s(Y,i+1,j,1)*s(Y,i+1,j,2)
-                                            +s(Y,i-1,j,0)*s(Y,i-1,j,1)*s(Y,i-1,j,2));
+            s(i_left,i,j,0) = access(Y,i,j,0)*access(Ydot,i,j,2) + access(Y,i,j,2)*access(Ydot,i,j,0);
+            s(i_left,i,j,0) += 1./(2*dx) * ( pow(access(Y,i,j+1,0),2)*access(Y,i,j+1,2) + 0.5*g*pow(access(Y,i,j+1,2),2)
+                                            -pow(access(Y,i,j-1,0),2)*access(Y,i,j-1,2) - 0.5*g*pow(access(Y,i,j-1,2),2))
+                              + 1./(2*dy) * (-access(Y,i+1,j,0)*access(Y,i+1,j,1)*access(Y,i+1,j,2)
+                                            +access(Y,i-1,j,0)*access(Y,i-1,j,1)*access(Y,i-1,j,2));
             
-            s(i_left,i,j,1) = s(Y,i,j,2)*s(Ydot,i,j,1) + s(Y,i,j,1)*s(Ydot,i,j,2);
-            s(i_left,i,j,1) += 1./(2*dy) * ( pow(s(Y,i-1,j,1),2)*s(Y,i-1,j,2) + 0.5*g*pow(s(Y,i-1,j,2),2)
-                                            -pow(s(Y,i+1,j,1),2)*s(Y,i+1,j,2) - 0.5*g*pow(s(Y,i+1,j,2),2))
-                              + 1./(2*dx) * (s(Y,i,j+1,0)*s(Y,i,j+1,1)*s(Y,i,j+1,2)
-                                            -s(Y,i,j-1,0)*s(Y,i,j-1,1)*s(Y,i,j-1,2));
+            s(i_left,i,j,1) = access(Y,i,j,2)*access(Ydot,i,j,1) + access(Y,i,j,1)*access(Ydot,i,j,2);
+            s(i_left,i,j,1) += 1./(2*dy) * ( pow(access(Y,i-1,j,1),2)*access(Y,i-1,j,2) + 0.5*g*pow(access(Y,i-1,j,2),2)
+                                            -pow(access(Y,i+1,j,1),2)*access(Y,i+1,j,2) - 0.5*g*pow(access(Y,i+1,j,2),2))
+                              + 1./(2*dx) * (access(Y,i,j+1,0)*access(Y,i,j+1,1)*access(Y,i,j+1,2)
+                                            -access(Y,i,j-1,0)*access(Y,i,j-1,1)*access(Y,i,j-1,2));
                     
-            s(i_left,i,j,2) = s(Ydot,i,j,2) + 1./(2*dx)*(s(Y,i,j+1,0)*s(Y,i,j+1,2) - s(Y,i,j-1,0)*s(Y,i,j-1,2))
-                              + 1./(2*dy)*(-s(Y,i+1,j,1)*s(Y,i+1,j,2) + s(Y,i-1,j,1)*s(Y,i-1,j,2));
+            s(i_left,i,j,2) = access(Ydot,i,j,2) 
+                              + 1./(2*dx)*(access(Y,i,j+1,0)*access(Y,i,j+1,2) - access(Y,i,j-1,0)*access(Y,i,j-1,2))
+                              + 1./(2*dy)*(-access(Y,i+1,j,1)*access(Y,i+1,j,2) + access(Y,i-1,j,1)*access(Y,i-1,j,2));      
         }
     }
     
@@ -164,50 +213,95 @@ arma::sp_mat form_Jacobian_Y(
 
     arma::sp_mat jacobian(Y.n_rows, Y.n_rows);
 
+    auto access = [&s](arma::vec& f, int i, int j, int k){
+        double flip = 1;
+        if(i < 0){
+            i = 1;
+            if(k == 1){
+                flip = -1;
+            }
+        }else if(i >= s.m_grid_y){
+            i = s.m_grid_y - 2;
+            if(k == 1){
+                flip = -1;
+            }
+        }else if(j < 0){
+            j = 1;
+            if(k == 0){
+                flip = -1;
+            }
+        }else if(j >= s.m_grid_x){
+            j = s.m_grid_x - 2;
+            if(k == 0){
+                flip = -1;
+            }
+        }
+
+        return flip * s(f, i, j, k);
+    };
+
+    auto add = [&s](
+        arma::sp_mat& jacobian, 
+        int fi, int fj, int fk, 
+        int yi, int yj, int yk, 
+        double val){
+        if(yi < 0){
+            yi = 1;
+            if(yk==1)
+                val *= -1;
+        }else if(yi>=s.m_grid_y){
+            yi = s.m_grid_y-2;
+            if(yk==1)
+                val *= -1;
+        }else if(yj < 0){
+            yj = 1;
+            if(yk==0)
+                val *= -1;
+        }else if(yj>=s.m_grid_x){
+            yj = s.m_grid_x-2;
+            if(yk==0)
+                val *= -1;
+        }
+        s(jacobian, fi, fj, fk, yi, yj, yk) += val;
+    };
+
     for(int j=0; j<s.m_grid_x; j++){
         for(int i=0; i<s.m_grid_y; i++){
-            // form jacobian for Y 
-            // if (i, j) is on boundary, then we set the jacobian to be identity
-            if(i == 0 or i == s.m_grid_y-1 or j == 0 or j == s.m_grid_x-1){
-                s(jacobian,i,j,0, i,j,0) += 1;
-                s(jacobian,i,j,1, i,j,1) += 1;
-                s(jacobian,i,j,2, i,j,2) += 1;
-            }else{
-                s(jacobian,i,j,0, i,j,0) += s(Ydot,i,j,2);
-                s(jacobian,i,j,0, i,j,2) += s(Ydot,i,j,0); 
-                s(jacobian,i,j,0, i,j+1,0) += 1./(2*dx) * (2*s(Y,i,j+1,0)*s(Y,i,j+1,2));
-                s(jacobian,i,j,0, i,j+1,2) += 1./(2*dx) * (pow(s(Y,i,j+1,0),2) + g*s(Y,i,j+1,2));
-                s(jacobian,i,j,0, i,j-1,0) -= 1./(2*dx) * (2*s(Y,i,j-1,0)*s(Y,i,j-1,2));
-                s(jacobian,i,j,0, i,j-1,2) -= 1./(2*dx) * (pow(s(Y,i,j-1,0),2) + g*s(Y,i,j-1,2));
-                s(jacobian,i,j,0, i+1,j,0) -= 1./(2*dy) * (s(Y,i+1,j,1)*s(Y,i+1,j,2));
-                s(jacobian,i,j,0, i+1,j,1) -= 1./(2*dy) * (s(Y,i+1,j,0)*s(Y,i+1,j,2));
-                s(jacobian,i,j,0, i+1,j,2) -= 1./(2*dy) * (s(Y,i+1,j,0)*s(Y,i+1,j,1));
-                s(jacobian,i,j,0, i-1,j,0) += 1./(2*dy) * (s(Y,i-1,j,1)*s(Y,i-1,j,2));
-                s(jacobian,i,j,0, i-1,j,1) += 1./(2*dy) * (s(Y,i-1,j,0)*s(Y,i-1,j,2));
-                s(jacobian,i,j,0, i-1,j,2) += 1./(2*dy) * (s(Y,i-1,j,0)*s(Y,i-1,j,1));
+                add(jacobian,i,j,0, i,j,0, access(Ydot,i,j,2));
+                add(jacobian,i,j,0, i,j,2, access(Ydot,i,j,0)); 
+                add(jacobian,i,j,0, i,j+1,0, 1./(2*dx) * (2*access(Y,i,j+1,0)*access(Y,i,j+1,2)));
+                add(jacobian,i,j,0, i,j+1,2, 1./(2*dx) * (pow(access(Y,i,j+1,0),2) + g*access(Y,i,j+1,2)));
+                add(jacobian,i,j,0, i,j-1,0, -1./(2*dx) * (2*access(Y,i,j-1,0)*access(Y,i,j-1,2)));
+                add(jacobian,i,j,0, i,j-1,2, -1./(2*dx) * (pow(access(Y,i,j-1,0),2) + g*access(Y,i,j-1,2)));
+                add(jacobian,i,j,0, i+1,j,0, -1./(2*dy) * (access(Y,i+1,j,1)*access(Y,i+1,j,2)));
+                add(jacobian,i,j,0, i+1,j,1, -1./(2*dy) * (access(Y,i+1,j,0)*access(Y,i+1,j,2)));
+                add(jacobian,i,j,0, i+1,j,2, -1./(2*dy) * (access(Y,i+1,j,0)*access(Y,i+1,j,1)));
+                add(jacobian,i,j,0, i-1,j,0, +1./(2*dy) * (access(Y,i-1,j,1)*access(Y,i-1,j,2)));
+                add(jacobian,i,j,0, i-1,j,1, +1./(2*dy) * (access(Y,i-1,j,0)*access(Y,i-1,j,2)));
+                add(jacobian,i,j,0, i-1,j,2, +1./(2*dy) * (access(Y,i-1,j,0)*access(Y,i-1,j,1)));
 
-                s(jacobian,i,j,1, i,j,1) += s(Ydot,i,j,2);
-                s(jacobian,i,j,1, i,j,2) += s(Ydot,i,j,1);
-                s(jacobian,i,j,1, i,j+1,0) += 1./(2*dx) * (s(Y,i,j+1,2)*s(Y,i,j+1,1));
-                s(jacobian,i,j,1, i,j+1,1) += 1./(2*dx) * (s(Y,i,j+1,0)*s(Y,i,j+1,2));
-                s(jacobian,i,j,1, i,j+1,2) += 1./(2*dx) * (s(Y,i,j+1,1)*s(Y,i,j+1,0));
-                s(jacobian,i,j,1, i,j-1,0) -= 1./(2*dx) * (s(Y,i,j-1,2)*s(Y,i,j-1,1));
-                s(jacobian,i,j,1, i,j-1,1) -= 1./(2*dx) * (s(Y,i,j-1,0)*s(Y,i,j-1,2));
-                s(jacobian,i,j,1, i,j-1,2) -= 1./(2*dx) * (s(Y,i,j-1,1)*s(Y,i,j-1,0));
-                s(jacobian,i,j,1, i+1,j,1) -= 1./(2*dy) * (2*s(Y,i+1,j,1)*s(Y,i+1,j,2));
-                s(jacobian,i,j,1, i+1,j,2) -= 1./(2*dy) * (pow(s(Y,i+1,j,1),2) + g*s(Y,i+1,j,2));
-                s(jacobian,i,j,1, i-1,j,1) += 1./(2*dy) * (2*s(Y,i-1,j,1)*s(Y,i-1,j,2));
-                s(jacobian,i,j,1, i-1,j,2) += 1./(2*dy) * (pow(s(Y,i-1,j,1),2) + g*s(Y,i-1,j,2));
+                add(jacobian,i,j,1, i,j,1, access(Ydot,i,j,2));
+                add(jacobian,i,j,1, i,j,2, access(Ydot,i,j,1));
+                add(jacobian,i,j,1, i,j+1,0, 1./(2*dx) * (access(Y,i,j+1,2)*access(Y,i,j+1,1)));
+                add(jacobian,i,j,1, i,j+1,1, 1./(2*dx) * (access(Y,i,j+1,0)*access(Y,i,j+1,2)));
+                add(jacobian,i,j,1, i,j+1,2, 1./(2*dx) * (access(Y,i,j+1,1)*access(Y,i,j+1,0)));
+                add(jacobian,i,j,1, i,j-1,0, -1./(2*dx) * (access(Y,i,j-1,2)*access(Y,i,j-1,1)));
+                add(jacobian,i,j,1, i,j-1,1, -1./(2*dx) * (access(Y,i,j-1,0)*access(Y,i,j-1,2)));
+                add(jacobian,i,j,1, i,j-1,2, -1./(2*dx) * (access(Y,i,j-1,1)*access(Y,i,j-1,0)));
+                add(jacobian,i,j,1, i+1,j,1, -1./(2*dy) * (2*access(Y,i+1,j,1)*access(Y,i+1,j,2)));
+                add(jacobian,i,j,1, i+1,j,2, -1./(2*dy) * (pow(access(Y,i+1,j,1),2) + g*access(Y,i+1,j,2)));
+                add(jacobian,i,j,1, i-1,j,1, 1./(2*dy) * (2*access(Y,i-1,j,1)*access(Y,i-1,j,2)));
+                add(jacobian,i,j,1, i-1,j,2, 1./(2*dy) * (pow(access(Y,i-1,j,1),2) + g*access(Y,i-1,j,2)));
                 
-                s(jacobian,i,j,2, i,j+1,0) += 1./(2*dx) * s(Y,i,j+1,2);
-                s(jacobian,i,j,2, i,j+1,2) += 1./(2*dx) * s(Y,i,j+1,0);
-                s(jacobian,i,j,2, i,j-1,0) -= 1./(2*dx) * s(Y,i,j-1,2);
-                s(jacobian,i,j,2, i,j-1,2) -= 1./(2*dx) * s(Y,i,j-1,0);
-                s(jacobian,i,j,2, i+1,j,1) -= 1./(2*dy) * s(Y,i+1,j,2);
-                s(jacobian,i,j,2, i+1,j,2) -= 1./(2*dy) * s(Y,i+1,j,1);
-                s(jacobian,i,j,2, i-1,j,1) += 1./(2*dy) * s(Y,i-1,j,2);
-                s(jacobian,i,j,2, i-1,j,2) += 1./(2*dy) * s(Y,i-1,j,1);
-            }
+                add(jacobian,i,j,2, i,j+1,0, 1./(2*dx) * access(Y,i,j+1,2));
+                add(jacobian,i,j,2, i,j+1,2, 1./(2*dx) * access(Y,i,j+1,0));
+                add(jacobian,i,j,2, i,j-1,0, -1./(2*dx) * access(Y,i,j-1,2));
+                add(jacobian,i,j,2, i,j-1,2, -1./(2*dx) * access(Y,i,j-1,0));
+                add(jacobian,i,j,2, i+1,j,1, -1./(2*dy) * access(Y,i+1,j,2));
+                add(jacobian,i,j,2, i+1,j,2, -1./(2*dy) * access(Y,i+1,j,1));
+                add(jacobian,i,j,2, i-1,j,1, 1./(2*dy) * access(Y,i-1,j,2));
+                add(jacobian,i,j,2, i-1,j,2, 1./(2*dy) * access(Y,i-1,j,1));
+            
         }
     }
 
@@ -226,19 +320,14 @@ arma::sp_mat form_Jacobian_Ydot(
     arma::sp_mat jacobian(Y.n_rows, Y.n_rows);
 
     for(int j=0; j<s.m_grid_x; j++){
-        for(int i=0; i<s.m_grid_y; i++){
-            // if (i, j) is on boundary, then we set the jacobian to be identity
-            if(i == 0 or i == s.m_grid_y-1 or j == 0 or j == s.m_grid_x-1){
-                continue;
-            }else{
+        for(int i=0; i<s.m_grid_y; i++){ 
                 s(jacobian,i,j,0, i,j,0, s(Y,i,j,2));
                 s(jacobian,i,j,0, i,j,2, s(Y,i,j,0));
 
                 s(jacobian,i,j,1, i,j,1, s(Y,i,j,2));
                 s(jacobian,i,j,1, i,j,2, s(Y,i,j,1));
 
-                s(jacobian,i,j,2, i,j,2, 1);
-            }
+                s(jacobian,i,j,2, i,j,2, 1);     
         }
     }
 
@@ -282,6 +371,7 @@ arma::vec model(
         arma::sp_mat jacobian2 = form_Jacobian_Ydot(t+dt/2, Y_mid, Ydot, structure);
         arma::sp_mat jacobian = 0.5 * jacobian1 + 1./ dt * jacobian2;
         // std::cout<<jacobian<<std::endl;
+        // std::cout<<(arma::mat)jacobian<<std::endl;
         Y_next += arma::spsolve(jacobian, -loss_vec);
 
         // if(try_count > 100){
@@ -360,28 +450,52 @@ void init(arma::vec &uvh, Structure2d &s){
 }
 
 // write a function to test if all these functions work well
-void test_shallow_water(){
+void test_shallow_water(int gx, int gy, double tmax){
     double t = 0;
-    double delta_t = 1e-3;
-    Structure2d structure(-2.5, 2.5, 129, -2.5, 2.5, 129, 3);
+    double L=5;
+    Structure2d structure(-L/2, L/2, gx, -L/2, L/2, gy, 3);
+    double delta_t = 0.001;
+
+    std::cout<<"grid_x: "<<structure.m_grid_x<<std::endl;
+    std::cout<<"grid_y: "<<structure.m_grid_y<<std::endl;
+    std::cout<<"dt: "<<delta_t<<" tmax: "<<tmax<<std::endl;
 
     arma::vec sol;
     structure.allocate_fields(sol);
 
     init(sol, structure);
-    std::cout<<"t= "<<t<<std::endl;
-    sol.save("./data/shallowwater/sol" + std::to_string(t) + ".csv", arma::raw_ascii);
+    // update ave_h
+    ave_h = structure.average_h(sol);
+    std::cout<<"t= "<<t<<"average h= "<<ave_h<<std::endl;
+    sol.save("./data/shallowwater/sol" + std::to_string(t) + ".bin", arma::raw_binary);
 
     // we do this loop: save uvh, calculate uvh at next time, until t=0.2
-    while(t < 0.2){
+    while(t < tmax){
         sol = model(t, delta_t, sol, structure);
         t += delta_t;
-        std::cout<<"t= "<<t<<std::endl;
+
+        ave_h = structure.average_h(sol);
+        std::cout<<"t= "<<t<<" average h= "<<ave_h<<std::endl;
         sol.save("./data/shallowwater/sol" + std::to_string(t) + ".bin", arma::raw_binary);
     }
 }
 
-int main(){
-    test_shallow_water();
+int main(int argc, char** argv){
+    // use boost to parse command line
+    namespace po = boost::program_options;
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help", "produce help message")
+        ("grid_x", po::value<int>()->default_value(100), "grid number in x direction")
+        ("grid_y", po::value<int>()->default_value(100), "grid number in y direction")
+        ("tmax", po::value<double>()->default_value(0.2), "max time")
+        ("g", po::value<double>(&g)->default_value(9.8), "gravity");
+    
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+
+    test_shallow_water(vm["grid_x"].as<int>(), vm["grid_y"].as<int>(), vm["tmax"].as<double>());
+
     return 0;
 }
