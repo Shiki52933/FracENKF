@@ -10,6 +10,8 @@
 #include <math.h>
 #include <limits>
 
+#include "Krylov.hpp"
+
 
 namespace shiki{
 

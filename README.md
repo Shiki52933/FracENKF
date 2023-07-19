@@ -21,6 +21,8 @@ g++ Simple.cpp -l armadillo -l boost_program_options -O3 -o ./build/Simple
 
 g++ shallow_water.cpp -l armadillo -l boost_program_options -O3 -o ./build/shallow
 
+g++ swe.cpp -l armadillo -l boost_program_options -O3 -o ./build/swe
+
 g++ reactive-diffusive.cpp -l armadillo -l boost_program_options -O3 -o ./build/re-di
 
 # 有趣的结果

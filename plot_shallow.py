@@ -12,8 +12,8 @@ import time
 # read the data
 def read_data(filename, cols, rows, dof):
     data = np.fromfile(filename, dtype=np.float64)
-    data.shape = [int(sys.argv[3]), cols, rows]
-    return data[dof].transpose()
+    data.shape = [cols, rows, int(sys.argv[3])]
+    return data[:,:,dof].transpose()
 
 
 # plot the solution
@@ -33,7 +33,7 @@ def plot_solution(datas, t, dof):
         print("time = ", t[i][3:-4])
         if(int(float(t[i][3:-4])) in critical_times):
             plt.pause(5)
-        plt.pause(0.01)
+        plt.pause(0.001)
         plt.clf()
         first_time = False
 
@@ -44,7 +44,7 @@ def main():
     data_dir = sys.argv[5]
     data_files = os.listdir(data_dir)
     data_files.sort(key=lambda x:float(x[3:-4]))
-    # data_files = data_files[0:-1]
+    data_files = data_files[0:-1]
     # data_files.sort()
     
     datas = []

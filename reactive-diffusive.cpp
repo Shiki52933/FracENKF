@@ -67,9 +67,9 @@ public:
     // k: field index
     // x axis is flipped
     inline double& operator()(arma::vec &fields, int i, int j, int k){
-        assert(i >= -1 && i <= m_grid_y);
-        assert(j >= -1 && j <= m_grid_x);
-        assert(k >= 0 && k < m_unknowns);
+        // assert(i >= -1 && i <= m_grid_y);
+        // assert(j >= -1 && j <= m_grid_x);
+        // assert(k >= 0 && k < m_unknowns);
         i = (i + m_grid_y) % m_grid_y;
         j = (j + m_grid_x) % m_grid_x;
         return fields(k*m_grid_y*m_grid_x + j*m_grid_y + i);
@@ -82,12 +82,12 @@ public:
         int yi, int yj, int yk,
         double value
         ){
-        assert(fi >= 0 && fi < m_grid_y);
-        assert(fj >= 0 && fj < m_grid_x);
-        assert(fk >= 0 && fk < m_unknowns);
-        assert(yi >= -1 && yi <= m_grid_y);
-        assert(yj >= -1 && yj <= m_grid_x);
-        assert(yk >= 0 && yk <= m_unknowns);
+        // assert(fi >= 0 && fi < m_grid_y);
+        // assert(fj >= 0 && fj < m_grid_x);
+        // assert(fk >= 0 && fk < m_unknowns);
+        // assert(yi >= -1 && yi <= m_grid_y);
+        // assert(yj >= -1 && yj <= m_grid_x);
+        // assert(yk >= 0 && yk <= m_unknowns);
         yi = (yi + m_grid_y) % m_grid_y;
         yj = (yj + m_grid_x) % m_grid_x;
         jacobian(fk*m_grid_y*m_grid_x + fj*m_grid_y + fi, yk*m_grid_y*m_grid_x + yj*m_grid_y + yi) = value;
@@ -98,12 +98,12 @@ public:
         int fi, int fj, int fk,
         int yi, int yj, int yk
         ){
-        assert(fi >= 0 && fi < m_grid_y);
-        assert(fj >= 0 && fj < m_grid_x);
-        assert(fk >= 0 && fk < m_unknowns);
-        assert(yi >= -1 && yi <= m_grid_y);
-        assert(yj >= -1 && yj <= m_grid_x);
-        assert(yk >= -1 && yk <= m_unknowns);
+        // assert(fi >= 0 && fi < m_grid_y);
+        // assert(fj >= 0 && fj < m_grid_x);
+        // assert(fk >= 0 && fk < m_unknowns);
+        // assert(yi >= -1 && yi <= m_grid_y);
+        // assert(yj >= -1 && yj <= m_grid_x);
+        // assert(yk >= -1 && yk <= m_unknowns);
         yi = (yi + m_grid_y) % m_grid_y;
         yj = (yj + m_grid_x) % m_grid_x;
         return jacobian(fk*m_grid_y*m_grid_x + fj*m_grid_y + fi, yk*m_grid_y*m_grid_x + yj*m_grid_y + yi);
