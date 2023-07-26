@@ -326,7 +326,7 @@ arma::sp_mat form_Jacobian_Ydot(
 arma::vec model(
     double t, 
     double dt,
-    arma::vec& Y,
+    const arma::vec& Y,
     Structure2d& structure,
     double tol=1e-6
 ){
@@ -348,7 +348,7 @@ arma::vec model(
         double loss = arma::norm(loss_vec, 2);
 
         // std::cout<<Y_next<<loss_vec;
-        std::cout<<"time: "<<t<<" time stepping "<<try_count++<<", loss is "<<loss<<std::endl;
+        // std::cout<<"time: "<<t<<" time stepping "<<try_count++<<", loss is "<<loss<<std::endl;
         
         if(loss < tol){
             break;
@@ -373,17 +373,35 @@ double init_v(double x, double y){
     return 0;
 }
 
-double init_h(double x, double y){
-    using std::exp;
-    using std::pow;
-    return exp(
-        -(
-            pow(x-1e6/2.7, 2) / (2 * pow(5e4, 2)) + pow(y-1e6/4., 2) / (2 * pow(5e4, 2))
-        )
-    );
-}
+// double init_h(double x, double y){
+//     using std::exp;
+//     using std::pow;
+//     double cx = 1e6/2.7, cy = 1e6/4.;
+//     double sx = 5e4, sy = 5e4;
+//     return exp(
+//         -(
+//             pow(x-cx, 2) / (2 * pow(sx, 2)) + pow(y-cy, 2) / (2 * pow(sy, 2))
+//         )
+//     );
+// }
 
-void init(arma::vec &uvh, Structure2d &s){
+void init(arma::vec &uvh, Structure2d &s, bool random=false, double init_error=0.03){
+    double cx = 1e6/2.7, cy = 1e6/4.;
+    double sx = 5e4, sy = 5e4;
+    if(random){
+        cx *= 1 + arma::randn() * init_error;
+        cy *= 1 + arma::randn() * init_error;
+        sx *= 1 + arma::randn() * init_error;
+        sy *= 1 + arma::randn() * init_error;
+    }
+    auto init_h = [&cx, &cy, &sx, &sy](double x, double y){
+        return std::exp(
+            -(
+            pow(x-cx, 2) / (2 * pow(sx, 2)) + pow(y-cy, 2) / (2 * pow(sy, 2))
+            )  
+        );
+    };
+
     for(int j=0; j<s.m_grid_x; ++j){
         double x = s.m_left + j * s.m_dx;
         for(int i=0; i<s.m_grid_y; ++i){
@@ -444,37 +462,11 @@ void test_shallow_water(int gx, int gy, int iter_times=5000){
     }
 }
 
-int main(int argc, char** argv){
-    // use boost to parse command line
-    namespace po = boost::program_options;
-    po::options_description desc("Allowed options");
-    desc.add_options()
-        ("help", "produce help message")
-        ("grid_x", po::value<int>()->default_value(150), "grid number in x direction")
-        ("grid_y", po::value<int>()->default_value(150), "grid number in y direction")
-        ("times", po::value<int>()->default_value(5000), "iter times");
-        
-    po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, desc), vm);
-    po::notify(vm);
-
-    // print params got from command line
-    std::cout<<"grid_x: "<<vm["grid_x"].as<int>()<<std::endl;
-    std::cout<<"grid_y: "<<vm["grid_y"].as<int>()<<std::endl;
-    std::cout<<"times: "<<vm["times"].as<int>()<<std::endl;
-    
-
-    test_shallow_water(vm["grid_x"].as<int>(), vm["grid_y"].as<int>(), vm["times"].as<int>());
-
-    return 0;
-}
-
-
 class SurrogateModel{
     using Model = arma::vec(
         double, 
         double,
-        arma::vec&,
+        const arma::vec&,
         Structure2d&,
         double
         );
@@ -509,7 +501,9 @@ public:
         double t0, 
         double delta_t,
         int iter_times,
-        double ob_noise){
+        double ob_noise){     
+        sol.save("./data/swe/sol" + std::to_string(t0) + ".bin", arma::raw_binary);
+
         // loop: ob, model update
         for(int i=0; i<iter_times; ++i){
             // ob
@@ -519,12 +513,122 @@ public:
             // update sol
             sol = m_model(t0, delta_t, sol, m_structure, 1e-6);
             t0 += delta_t;
+            sol.save("./data/swe/sol" + std::to_string(t0) + ".bin", arma::raw_binary);
         }
     }
 
 };
 
-void test_da(){
-    
+void test_da(int gx, int gy, int iter_times, int en_size, int ob_num, double init_error){
+    double t = 0;
+    double L = 1e6;
+    Structure2d structure(-L/2, L/2, gx, -L/2, L/2, gy, 3);
+    init_setting(structure); 
+
+    double delta_t = 0.1 * L / std::max(gx-1, gy-1) / 
+                    std::sqrt(structure.m_setting.g * structure.m_setting.H);
+
+    {
+    std::cout<<"grid_x: "<<structure.m_grid_x<<std::endl;
+    std::cout<<"grid_y: "<<structure.m_grid_y<<std::endl;
+    std::cout<<"dt: "<<delta_t<<" tmax: "<<(iter_times*delta_t)<<std::endl;
+    }
+
+    // init sol
+    arma::vec sol;
+    structure.allocate_fields(sol);
+    init(sol, structure);
+
+    // set ob pos
+    SurrogateModel s_model(structure, model, ob_num*ob_num);
+    // we observe at ob_num*ob_num grids, boundary is also observed 
+    double ob_dx = L / (ob_num - 1);
+    double ob_dy = L / (ob_num - 1);
+    for(int i=0; i<ob_num; ++i){
+        for(int j=0; j<ob_num; ++j){
+            double x = structure.m_left + j * ob_dx;
+            double y = structure.m_high - i * ob_dy;
+            s_model.add_ob_pos(x, y, 2);
+        }
+    }
+
+    // generate numerical solution
+    double ob_noise = 0.1;
+    auto ob_error_ptr = std::make_shared<arma::mat>();
+    *ob_error_ptr = arma::eye<arma::mat>(ob_num*ob_num, ob_num*ob_num) * ob_noise * ob_noise;
+    s_model.gen_numerical_solution(sol, t, delta_t, iter_times, ob_noise);
+    std::cout<<"numerical solution generated"<<std::endl;
+
+    // prepare for use of pde_group_enkf in gEnKF.hpp
+    // double init_error = 0.03;
+    arma::mat ensemble(sol.n_elem, en_size, arma::fill::none);
+    for(int i=0; i<en_size; ++i){
+        init(sol, structure, true, init_error);
+        ensemble.col(i) = sol;
+    }
+    ensemble.save("./data/swe_init.bin", arma::raw_binary);
+    arma::sp_mat init_var = arma::eye<arma::sp_mat>(sol.n_elem, sol.n_elem) * init_error * init_error;
+    std::vector<arma::sp_mat> vars = {init_var};
+    std::cout<<"ensemble generated"<<std::endl;
+
+    errors ob_error;
+    for(int i=0; i<iter_times; ++i){
+        ob_error.add(ob_error_ptr);
+    }
+
+    std::string output_dir = "./data/swe/";
+    std::vector<double> max_error, rel_error;
+    std::cout<<"start pde_group_Enkf"<<std::endl;
+
+    pde_group_Enkf(
+        iter_times, t, delta_t,
+        ensemble, vars, 
+        s_model.m_ob_results, s_model.m_H, ob_error,  
+        model, structure, output_dir, 
+        max_error, rel_error
+        );
+
+    // save max_error and rel_error
+    arma::vec max_error_vec(max_error);
+    arma::vec rel_error_vec(rel_error);
+    max_error_vec.save("./data/max_error.bin", arma::raw_binary);
+    rel_error_vec.save("./data/rel_error.bin", arma::raw_binary);
 }
 
+int main(int argc, char** argv){
+    // use boost to parse command line
+    namespace po = boost::program_options;
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help", "produce help message")
+        ("grid_x", po::value<int>()->default_value(150), "grid number in x direction")
+        ("grid_y", po::value<int>()->default_value(150), "grid number in y direction")
+        ("times", po::value<int>()->default_value(500), "iter times")
+        ("en-size", po::value<int>()->default_value(20), "ensemble size")
+        ("ob-num", po::value<int>()->default_value(11), "ob number per direction")
+        ("init-error", po::value<double>()->default_value(0.03), "init error");
+        
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+
+    // print params got from command line
+    std::cout<<"grid_x: "<<vm["grid_x"].as<int>()<<std::endl;
+    std::cout<<"grid_y: "<<vm["grid_y"].as<int>()<<std::endl;
+    std::cout<<"times: "<<vm["times"].as<int>()<<std::endl;
+    std::cout<<"en-size: "<<vm["en-size"].as<int>()<<std::endl;
+    std::cout<<"ob-num: "<<vm["ob-num"].as<int>()<<std::endl;
+    std::cout<<"init-error: "<<vm["init-error"].as<double>()<<std::endl;
+    
+
+    test_da(
+        vm["grid_x"].as<int>(), 
+        vm["grid_y"].as<int>(), 
+        vm["times"].as<int>(), 
+        vm["en-size"].as<int>(),
+        vm["ob-num"].as<int>(),
+        vm["init-error"].as<double>()
+        );
+
+    return 0;
+}

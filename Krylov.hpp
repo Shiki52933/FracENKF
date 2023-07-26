@@ -39,7 +39,7 @@ arma::vec Krylov(
         error = arma::norm(b - A * x);
     } 
     
-    std::cout<<"Krylov method converged in "<<m<<" iterations."<<std::endl;
+    // std::cout<<"Krylov method converged in "<<m<<" iterations."<<std::endl;
     return x;
 }
 

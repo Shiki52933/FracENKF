@@ -44,7 +44,7 @@ def main():
     data_dir = sys.argv[5]
     data_files = os.listdir(data_dir)
     data_files.sort(key=lambda x:float(x[3:-4]))
-    data_files = data_files[0:-1]
+    data_files = data_files[0:500]
     # data_files.sort()
     
     datas = []
