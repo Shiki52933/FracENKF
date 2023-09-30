@@ -1,5 +1,8 @@
 #pragma once
 #include "fEKF.hpp"
+#include "utility.hpp"
+#include "eigen.hpp"
+#include <type_traits>
 
 namespace shiki{
 
@@ -381,5 +384,151 @@ void pde_group_Enkf(
 
     return ;
 }
+
+
+class ggEnKF{
+    double init_var;
+    int N;
+    bool update_var;
+
+    public:
+    std::vector<double> errors, eigen_ratios;
+
+    public:
+    ggEnKF(double init_var, int N, bool update_var=true): init_var(init_var), N(N), update_var(update_var){}
+
+    private:
+    mat static H_var(const sp_mat &H, const GVar &var){
+        mat total(var.k * H);
+        for(int i=0; i<var.A.size(); ++i){
+            total += ( H * var.A[i] ) * var.B[i].t();
+        }
+        return total;
+    }
+
+    void clean_up(mat &E, std::vector<GVar> &vars){
+        if(vars[0].A.size() < 30)
+            return;
+
+        int N = vars[0].A[0].n_rows;
+        mat mu = mean(E, 1);
+        mat deviation = E.each_col() - mu;
+
+        GVar temp;
+        temp.k = 0;
+        temp.A.push_back(deviation);
+        temp.B.push_back(deviation);
+
+        for(auto &var: vars){
+            temp.k += var.k;
+            for(int i=0; i<var.A.size(); ++i){
+                temp.A.push_back(var.A[i]);
+                temp.B.push_back(var.B[i]);
+            }
+        }
+
+        auto [eigen_value, eigen_vector] = eigen_pow(temp.k, temp.A, temp.B, N);
+        double min_eigen = arma::min(eigen_value);
+        double max_eigen = arma::max(eigen_value);
+        double ratio = max_eigen / (min_eigen + 1e-6);
+        eigen_ratios.push_back(ratio);
+
+        for(int i=0; i<N-1; ++i){
+            E.col(i) = sqrt((eigen_value(i) - min_eigen)/2) * eigen_vector.col(i) + mu;
+        }
+        E.col(N-1) = N * mu - arma::sum(E.submat(0,0,E.n_rows-1,N-2), 1);
+
+        for(auto &var: vars){
+            var.k = min_eigen / N;
+            var.A.clear();
+            var.B.clear();
+        }   
+    }
+
+
+public:
+// template<typename OB, typename HMM,
+//     typename std::enable_if<std::is_base_of<Observer, OB>{}, int>::type = 0, 
+//     typename std::enable_if<std::is_base_of<BHMM, HMM>{}, int>::type = 0>
+void assimilate(
+    int iters_num, double t0, double dt,
+    mat ensemble, std::vector<GVar> vars, 
+    Observer &ob, BHMM &hmm
+    ){
+    using std::vector;
+    int N = ensemble.n_cols;
+    errors.clear();
+    eigen_ratios.clear();
+
+    for(int i=0; i<iters_num; i++){
+        if(ob.is_observable(t0)){
+            // 计算局部方差
+            mat sum_H_var, sum_H_var_H_t;
+            vector<mat> H_var_list;
+            vector<mat> H_var_H_t_list;
+            for(int j=0; j<vars.size(); ++j){
+                sp_mat H_j = ob.linear(t0, ensemble.col(j));
+                mat H_var_j = H_var(H_j, vars[j]);
+                mat H_var_j_H_t = H_var_j * H_j.t();
+                H_var_list.push_back(H_var_j);
+                H_var_H_t_list.push_back(H_var_j_H_t);
+                if(j==0){
+                    sum_H_var = H_var_j;
+                    sum_H_var_H_t = H_var_j_H_t;
+                }else{
+                    sum_H_var += H_var_j;
+                    sum_H_var_H_t += H_var_j_H_t;
+                }
+            }
+
+            auto Eo = ob.observe(t0, ensemble); // HX
+            mat Eo_mu = mean(Eo, 1); // HX_mean
+            mat Hx_f = Eo.each_col() - Eo_mu;  // HX_f
+
+            // 平均值
+            mat mu = mean(ensemble, 1);
+            mat x_f = ensemble.each_col() - mu;
+            
+            mat ob_noise = ob.noise(t0);
+            mat C = arma::inv( Hx_f * Hx_f.t() + sum_H_var_H_t + ob_noise * N );
+            mat KG = x_f * (Hx_f.t() * C) + sum_H_var.t() * C;
+
+            auto y = ob.get_observation(t0);
+            ensemble += KG * (y - Eo.each_col());
+
+            // 更新vars
+            for(int j=0; j<N; ++j){
+                mat H_var_j_t = H_var_list[j].t();
+                mat t = H_var_H_t_list[j] + ob_noise;
+                t = KG * t;
+                vars[j].A.push_back( KG );
+                vars[j].B.push_back( -H_var_j_t + t );
+                vars[j].A.push_back( -H_var_j_t );
+                vars[j].B.push_back( KG );
+            }
+
+            clean_up(ensemble, vars);
+        }
+
+        // 储存结果
+        vec mu = mean(ensemble, 1);
+        // res.push_back(vec(mean(ensemble, 1)));
+        // check error
+        vec real = hmm.get_state(t0);
+        std::cout<<"max error: "<<arma::max(arma::abs(mu - real))<<'\n';
+        std::cout<<"relative error: "<<arma::norm(mu - real) / arma::norm(real)<<'\n';
+        errors.push_back(arma::norm(mu - real) / arma::norm(real));
+
+
+        // 如果不是最后一步，就往前推进
+        if(i != iters_num-1){
+            ensemble = hmm.model(t0, dt, ensemble);
+            t0 += dt;
+        }
+    }
+
+    // return errors;
+}
+};
 
 }

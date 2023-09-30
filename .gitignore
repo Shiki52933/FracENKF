@@ -1,0 +1,7 @@
+.vscode
+build
+data
+__pycache__
+images
+logs
+a.out
