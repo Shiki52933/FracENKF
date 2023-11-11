@@ -8,7 +8,7 @@ using namespace std;
 int main(){
     // reference model
     SweBHMM swe(100, 100, 500);
-    swe.assimilate();
+    swe.reference();
     cout << "swe.assimilate() finished" << endl;
     
     // observation setting

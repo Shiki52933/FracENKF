@@ -4,7 +4,7 @@
 
 namespace shiki
 {
-
+    /// @brief hidden markov model of shallow water equation
     class SweBHMM : public BHMM
     {
     public:
@@ -370,7 +370,6 @@ namespace shiki
             return jacobian;
         }
 
-        // function solver for shallow water equation, using rk2
         arma::vec model(
             double t,
             double dt,
@@ -506,7 +505,7 @@ namespace shiki
             return times;
         }
 
-        void assimilate() override
+        void reference() override
         {
             for (int i = 0; i < iter_times; ++i)
             {
@@ -543,88 +542,8 @@ namespace shiki
         }
     };
 
-    class LinearObserver : public Observer
-    {
-    public:
-        int gap;
-        std::vector<double> times;
-        std::vector<sp_mat> Hs;
-        std::vector<mat> noises;
-        std::vector<vec> observations;
-        BHMM &hmm;
-
-    public:
-        LinearObserver(int gap, BHMM &hmm) : gap(gap), hmm(hmm)
-        {
-            auto possible_times = hmm.get_times();
-            for (int i = 1; i < possible_times.size(); i += gap)
-            {
-                times.push_back(possible_times[i]);
-            }
-        }
-
-        auto get_times()
-        {
-            return times;
-        }
-
-        void set_H_noise(std::vector<sp_mat> &Hs, std::vector<mat> &noises)
-        {
-            this->Hs = Hs;
-            this->noises = noises;
-            assert(Hs.size() == times.size());
-            assert(noises.size() == times.size());
-        }
-
-        bool is_observable(double t) override
-        {
-            return std::binary_search(times.begin(), times.end(), t);
-        }
-
-        void observe() override
-        {
-            for (int i = 0; i < times.size(); ++i)
-            {
-                vec real = hmm.get_state(times[i]);
-                vec noise = arma::mvnrnd(vec(noises[i].n_rows, arma::fill::zeros), noises[i]);
-                // if(arma::norm(noise) != 0){
-                //     std::cout<<"noise is not zero"<<std::endl;
-                // }
-                observations.push_back(Hs[i] * real + noise);
-            }
-        }
-
-        vec get_observation(double t) override
-        {
-            int idx = std::lower_bound(times.begin(), times.end(), t) - times.begin();
-            return observations.at(idx);
-        }
-
-        vec observe(double t, vec state) override
-        {
-            int idx = std::lower_bound(times.begin(), times.end(), t) - times.begin();
-            return Hs[idx] * state;
-        }
-
-        mat observe(double t, mat state) override
-        {
-            int idx = std::lower_bound(times.begin(), times.end(), t) - times.begin();
-            return Hs[idx] * state;
-        }
-
-        sp_mat linear(double t, vec state) override
-        {
-            int idx = std::lower_bound(times.begin(), times.end(), t) - times.begin();
-            return Hs[idx];
-        }
-
-        mat noise(double t) override
-        {
-            int idx = std::lower_bound(times.begin(), times.end(), t) - times.begin();
-            return noises[idx];
-        }
-    };
-
+    /// @brief generate an observe operator H which observes on a structured grid
+    /// @brief only observes one field directly
     class StructureGridObserveOperatorGenerator
     {
     public:
@@ -661,6 +580,7 @@ namespace shiki
 
     /// @brief Given a structured grid and numbers of observe each direction,
     /// @brief generate a random observe operator, which observes with random offset
+    /// @brief return H for each call of generate()
     class RandomObserveHelper
     {
     public:

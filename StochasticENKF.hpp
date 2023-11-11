@@ -1,5 +1,4 @@
 #pragma once
-#include <armadillo>
 #include <vector>
 #include <utility>
 #include <tuple>
@@ -9,9 +8,8 @@
 #include <memory>
 #include <math.h>
 #include <limits>
-#include <assert.h>
 
-#include "Krylov.hpp"
+#include "utility.hpp"
 
 
 namespace shiki{
@@ -459,52 +457,6 @@ vec b_alpha(double alpha, int n){
     return res.subvec(1, n+1) - res.subvec(0, n);
 }
 
-double compute_skewness(const mat& ensemble){
-    // mean and variance
-    int ensemble_size = ensemble.n_cols;
-    vec mean = vec(arma::mean(ensemble, 1));
-    mat x_f = (ensemble.each_col() - mean) / sqrt(ensemble_size);
-    mat variance = x_f *x_f.t();
-    mat var_inverse = arma::pinv(variance);
-
-    // calculate skewness
-    double skewness = 0;
-    for(int i=0; i<ensemble_size; i++){
-        mat deviation_i = ensemble.col(i) - mean;
-        for(int j=0; j<ensemble_size; j++){
-            mat deviation_j = ensemble.col(j) - mean;
-            mat t = deviation_i.t() * var_inverse * deviation_j;
-            skewness += pow(t(0,0), 3);
-        }
-    }
-    skewness /= ensemble_size * ensemble_size;
-    return skewness;
-}
-
-double compute_kurtosis(const mat& ensemble){
-    // mean and variance
-    double ensemble_size = ensemble.n_cols;
-    double p = ensemble.n_rows;
-    vec mean = vec(arma::mean(ensemble, 1));
-    mat x_f = (ensemble.each_col() - mean) / sqrt(ensemble_size);
-    mat variance = x_f *x_f.t();
-    mat var_inverse = arma::pinv(variance);
-
-    // calculate kurtosis
-    double kurtosis = 0;
-    for(int i=0; i<ensemble_size; i++){
-        mat deviation_i = ensemble.col(i) - mean;
-        mat t = deviation_i.t() * var_inverse * deviation_i;
-        kurtosis += pow(t(0,0), 2);
-    }
-    kurtosis /= ensemble_size;
-
-    // convert to N(0, 1)
-    kurtosis -= (ensemble_size - 1) / (ensemble_size + 1) * p * (p + 2);
-    kurtosis /= sqrt(8.0 / ensemble_size * p * (p + 2));
-    return kurtosis;
-}
-
 mat compute_bino(drowvec orders, int n){
     mat bino(n+1, orders.n_cols, arma::fill::none);
     
@@ -516,30 +468,6 @@ mat compute_bino(drowvec orders, int n){
 
     return bino;
 }
-
-
-void print_singular_values(const mat &var){
-    arma::rowvec svd = arma::svd(var).t();
-    double sum = arma::accu(svd);
-        
-    // std::cout<<"biggest svd: "<<svd[0]<<'\t'<<"smallest svd: "<<svd[svd.n_rows-1]<<std::endl;
-    // std::cout<<svd.t()<<std::endl;
-    std::cout<<arma::cumsum(svd)/sum;
-
-}
-
-void print_singular_values(const std::vector<mat> &vars){
-    double singular_max = -1;
-    double singular_min = std::numeric_limits<double>().max();
-
-    for(const mat &var: vars){
-        vec svd = arma::svd(var);
-        singular_max = std::max(singular_max, svd[0]);
-        singular_min = std::min(singular_min, svd[svd.n_rows-1]);
-    }
-    std::cout<<"biggest svd: "<<singular_max<<'\t'<<"smallest svd: "<<singular_min<<std::endl;
-}
-
 
 
 }

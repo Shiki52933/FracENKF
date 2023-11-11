@@ -1,25 +1,23 @@
 #pragma once
 #include "utility.hpp"
-#include "StochasticENKF.hpp"
-
 
 namespace shiki
 {
-    class Lorenz96Model: public BHMM
+    class Lorenz96Model : public HMM
     {
         int dim = 40;
         double F = 8;
         double dt = 0.005;
         double t_max = 20;
-        mat sys_var;
-        vec s;
-        std::vector<vec> states;
+        arma::mat sys_var;
+        arma::vec s;
+        std::vector<arma::vec> states;
         std::vector<double> times;
 
     public:
-        Lorenz96Model(int dim, double F, double dt, double t_max, mat sys_var) : dim(dim), F(F), dt(dt), t_max(t_max), sys_var(sys_var)
+        Lorenz96Model(int dim, double F, double dt, double t_max, arma::mat sys_var) : dim(dim), F(F), dt(dt), t_max(t_max), sys_var(sys_var)
         {
-            assert (sys_var.n_rows == dim && sys_var.n_cols == dim);
+            assert(sys_var.n_rows == dim && sys_var.n_cols == dim);
             s = arma::randn(dim);
         }
 
@@ -28,10 +26,10 @@ namespace shiki
             this->s = s;
         }
 
-        mat model(double t, double dt, const mat &ensemble) override
+        arma::mat model(double t, double dt, const arma::mat &ensemble) override
         {
             int M = ensemble.n_rows, N = ensemble.n_cols;
-            mat newer(M, N, arma::fill::none);
+            arma::mat newer(M, N, arma::fill::none);
 
             for (int i = 0; i < M; i++)
             {
@@ -39,28 +37,27 @@ namespace shiki
                 int far = (i + M - 2) % M;
                 int next = (i + 1) % M;
 
-                mat derivative = ensemble.row(pre) % (ensemble.row(next) - ensemble.row(far)) - ensemble.row(i) + F;
-                mat value = derivative * dt + ensemble.row(i);
+                arma::mat derivative = ensemble.row(pre) % (ensemble.row(next) - ensemble.row(far)) - ensemble.row(i) + F;
+                arma::mat value = derivative * dt + ensemble.row(i);
                 newer.row(i) = value;
             }
 
-            // // add perturbation
-            // mat temp, perturb(M, N, arma::fill::none);
-            // if (arma::inv(temp, sys_var))
-            // {
-            //     perturb = arma::mvnrnd(vec(M, arma::fill::zeros), sys_var, N);
-            //     newer += perturb;
-            // }
+            // add perturbation
+            arma::mat perturb;
+            if (arma::mvnrnd(perturb, arma::vec(M), sys_var, N))
+            {
+                newer += dt * perturb;
+            }
 
             return newer;
         }
-    
-        sp_mat noise(double t) override
+
+        arma::sp_mat noise(double t) override
         {
-            return sp_mat(sys_var);
+            return arma::sp_mat(sys_var);
         }
 
-        void assimilate() override
+        void reference() override
         {
             states.clear();
             times.clear();
@@ -74,7 +71,7 @@ namespace shiki
             }
         }
 
-        vec get_state(double t) override
+        arma::vec get_state(double t) override
         {
             int index = (int)(t / dt);
             return states.at(index);
@@ -83,30 +80,6 @@ namespace shiki
         std::vector<double> get_times() override
         {
             return times;
-        }
-    };
-
-    class GeneralRandomObserveHelper
-    {
-        int dim;
-        int obs_num;
-        
-    public:
-        GeneralRandomObserveHelper(int dim, int obs_num) : dim(dim), obs_num(obs_num)
-        {
-        }
-
-        sp_mat generate()
-        {
-            sp_mat H(obs_num, dim);
-            int max_offset = dim / obs_num;
-            int offset = rand() % max_offset;
-            for (int i = 0; i < obs_num; i++)
-            {
-                H(i, offset) = 1;
-                offset += max_offset;
-            }
-            return H;
         }
     };
 
