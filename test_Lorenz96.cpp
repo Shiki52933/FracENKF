@@ -1,4 +1,5 @@
 #include "utility.hpp"
+#include "Lorenz96.hpp"
 #include "swe.hpp"
 #include "gEnKF.hpp"
 using namespace shiki;
@@ -7,23 +8,25 @@ using namespace std;
 
 int main(){
     // reference model
-    SweBHMM swe(100, 100, 500);
-    swe.assimilate();
-    cout << "swe.assimilate() finished" << endl;
+    int dim=40, obs_num = 20;
+    double t_max = 20, dt = 0.005;
+    Lorenz96Model l96(dim, 8, dt, t_max, 0. * eye(40, 40));
+    l96.assimilate();
+    cout << "l96.assimilate() finished" << endl;
     
     // observation setting
-    LinearObserver ob(10, swe);
+    LinearObserver ob(10, l96);
     int needed = ob.get_times().size();
 
     vector<sp_mat> hs(needed);
-    RandomObserveHelper helper(swe.structure, 10, 10, 2);
+    GeneralRandomObserveHelper helper(dim, obs_num);
     for(int i=0; i<needed; ++i){
         hs[i] = helper.generate();
     }
 
     vector<mat> noises(needed);
     for(int i=0; i<needed; ++i){
-        noises[i] = 0.01 * eye(hs[i].n_rows, hs[i].n_rows);
+        noises[i] = 0.1 * eye(hs[i].n_rows, hs[i].n_rows);
     }
     ob.set_H_noise(hs, noises);
     ob.observe();
@@ -34,22 +37,15 @@ int main(){
     int N=20;
     ggEnKF enkf(0.1, N, true);
 
-    vec real0 = swe.get_state(swe.t0);
-    arma::mat ensemble(real0.n_rows, N, arma::fill::none);
-    for(int i=0; i<N; ++i){
-        swe.init(real0, swe.structure, false, 0.03);
-        ensemble.col(i) = real0;
-    }
+    arma::mat ensemble = mvnrnd(vec(dim), 10*eye(dim, dim), N);
 
     vector<shiki::GVar> gvars;
-    for(int i=0; i<1; ++i){
+    for(int i=0; i<N; ++i){
         gvars.push_back(GVar());
-        gvars[i].k = 0.03;
+        gvars[i].k = 10;
     }
 
-    std::cout<<"start assimilation" << std::endl;
-
-    enkf.assimilate(swe.iter_times, swe.t0, swe.dt, ensemble, gvars, ob, swe);
+    enkf.assimilate(l96.get_times().size(), 0, dt, ensemble, gvars, ob, l96);
 
     // print the errors saved in enkf
     cout<< "errors: " << endl;

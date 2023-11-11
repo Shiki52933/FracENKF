@@ -7,7 +7,7 @@ namespace shiki
 
     class SweBHMM : public BHMM
     {
-        public:
+    public:
         enum class BoundaryCondition
         {
             Periodic,
@@ -486,7 +486,8 @@ namespace shiki
     public:
         SweBHMM(int gx, int gy, int iter_times = 5000)
         {
-            t0 = 0; t = t0;
+            t0 = 0;
+            t = t0;
             L = 1e6;
             this->iter_times = iter_times;
             structure = Structure2d(-L / 2, L / 2, gx, -L / 2, L / 2, gy, 3);
@@ -623,4 +624,72 @@ namespace shiki
             return noises[idx];
         }
     };
+
+    class StructureGridObserveOperatorGenerator
+    {
+    public:
+        SweBHMM::Structure2d &structure;
+        int N_obs;
+        sp_mat H;
+        int iter = 0;
+
+    public:
+        StructureGridObserveOperatorGenerator(SweBHMM::Structure2d &structure, int N_obs) : structure(structure), N_obs(N_obs)
+        {
+            H = sp_mat(N_obs, structure.m_grid_x * structure.m_grid_y * structure.m_unknowns);
+        }
+
+        void ob_at(int i, int j, int k)
+        {
+            H(iter++, structure.index2int(i, j, k)) = 1;
+            assert(iter <= N_obs);
+        }
+
+        void ob_at(double x, double y, int k)
+        {
+            int i = std::round((structure.m_high - y) / structure.m_dy);
+            int j = std::round((x - structure.m_left) / structure.m_dx);
+            H(iter++, structure.index2int(i, j, k)) = 1;
+            assert(iter <= N_obs);
+        }
+
+        sp_mat get_H()
+        {
+            return H;
+        }
+    };
+
+    /// @brief Given a structured grid and numbers of observe each direction,
+    /// @brief generate a random observe operator, which observes with random offset
+    class RandomObserveHelper
+    {
+    public:
+        SweBHMM::Structure2d &structure;
+        int N_obs_x, N_obs_y;
+        int k;
+
+    public:
+        RandomObserveHelper(SweBHMM::Structure2d &structure, int N_obs_x, int N_obs_y, int k) : structure(structure), N_obs_x(N_obs_x), N_obs_y(N_obs_y), k(k)
+        {
+        }
+
+        sp_mat generate()
+        {
+            StructureGridObserveOperatorGenerator ob(structure, N_obs_x * N_obs_y);
+            int max_offset_x = structure.m_grid_x / N_obs_x;
+            int max_offset_y = structure.m_grid_y / N_obs_y;
+            int offset_x = rand() % max_offset_x;
+            int offset_y = rand() % max_offset_y;
+
+            for (int j = 0; j < N_obs_x; ++j)
+            {
+                for (int i = 0; i < N_obs_y; ++i)
+                {
+                    ob.ob_at(i * max_offset_y + offset_y, j * max_offset_x + offset_x, k);
+                }
+            }
+            return ob.get_H();
+        }
+    };
+
 }

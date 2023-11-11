@@ -603,7 +603,7 @@ int main(int argc, char** argv){
         ("help", "produce help message")
         ("grid_x", po::value<int>()->default_value(150), "grid number in x direction")
         ("grid_y", po::value<int>()->default_value(150), "grid number in y direction")
-        ("times", po::value<int>()->default_value(500), "iter times")
+        ("times", po::value<int>()->default_value(2000), "iter times")
         ("en-size", po::value<int>()->default_value(20), "ensemble size")
         ("ob-num", po::value<int>()->default_value(11), "ob number per direction")
         ("init-error", po::value<double>()->default_value(0.03), "init error");

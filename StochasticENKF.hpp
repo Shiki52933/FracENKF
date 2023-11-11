@@ -9,6 +9,7 @@
 #include <memory>
 #include <math.h>
 #include <limits>
+#include <assert.h>
 
 #include "Krylov.hpp"
 

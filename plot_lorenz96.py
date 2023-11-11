@@ -4,8 +4,8 @@ from matplotlib import pyplot as plt
 from metric import rmse_re
 
 sol = np.loadtxt("./data/lorenz96.csv")
-skewness = np.loadtxt("./data/skewness.csv")
-kurtosis = np.loadtxt("./data/kurtosis.csv")
+# skewness = np.loadtxt("./data/skewness.csv")
+# kurtosis = np.loadtxt("./data/kurtosis.csv")
 
 # fig = plt.figure()
 # ax1 = plt.axes(projection='3d')

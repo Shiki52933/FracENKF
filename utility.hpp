@@ -17,6 +17,8 @@ class BigHiddenMarkovModel{
     virtual void assimilate() = 0;
     virtual vec get_state(double) = 0;
     virtual std::vector<double> get_times() = 0;
+
+    // t == now, t + dt == next
     virtual mat model(double t, double dt, const mat & e) = 0;
     virtual sp_mat noise(double) = 0;
 };

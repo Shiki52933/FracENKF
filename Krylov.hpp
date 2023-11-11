@@ -17,7 +17,10 @@ arma::vec Krylov(
         current = A * current;
     }
 
+    // std::cout<< "enter solve"<<std::endl;
     arma::vec beta = arma::solve(approx.submat(0,1,n-1,m-1), b);
+    // std::cout<< "solve finished"<<std::endl;
+
     arma::vec x(n, arma::fill::zeros);
     for(int j=0; j<m-1; ++j){
         x += beta(j) * approx.col(j);
