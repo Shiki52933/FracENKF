@@ -9,7 +9,7 @@ namespace shiki
     public:
         bool test_normal=false;
         bool is_linear=false;
-        std::vector<double> skewnesses, kurtosises;
+        std::vector<double> skewnesses, kurtosises, max_error, relative_error;
         std::vector<arma::vec> res;
 
     public:
@@ -20,6 +20,8 @@ namespace shiki
             // prepare
             skewnesses.clear();
             kurtosises.clear();
+            max_error.clear();
+            relative_error.clear();
             res.clear();
             int ensemble_size = ensemble.n_cols;
 
@@ -72,13 +74,20 @@ namespace shiki
                     ensemble += gain * auxiliary;
                 }
 
-                // 储存结果
-                res.push_back(arma::vec(arma::mean(ensemble, 1)));
+                {
+                    // 储存结果
+                    arma::vec mu = arma::mean(ensemble, 1);
+                    res.push_back(mu);
+                    arma::vec error = arma::abs(hmm.get_state(t0) - mu);
+                    max_error.push_back(arma::max(error));
+                    relative_error.push_back(arma::norm(error) / (arma::norm(hmm.get_state(t0)) + 1e-6));
+                }
 
                 // 如果不是最后一步，就往前推进
                 if (i != iters_num - 1)
                 {
                     ensemble = hmm.model(t0, dt, ensemble);
+                    t0 += dt;
                 }
             }
         }

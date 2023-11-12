@@ -14,215 +14,6 @@
 
 namespace shiki{
 
-using arma::vec;
-using arma::drowvec;
-using arma::mat;
-using arma::sp_mat;
-
-class errors{
-    std::vector<std::shared_ptr<mat>> m_ptrs;
-
-public:
-    void add(std::shared_ptr<mat> ptr2mat){
-        this->m_ptrs.push_back(ptr2mat);
-    }
-
-    // 返回误差矩阵，不做边界检查
-    mat& operator[](int idx){
-        return *m_ptrs[idx];
-    }
-}; 
-
-typedef mat (*observe_operator)(mat&);
-typedef mat (*dynamic_model)(mat& ensembleAnalysis, int idx, mat& sysVar);
-extern double compute_skewness(const mat& ensemble);
-extern double compute_kurtosis(const mat& ensemble);
-
-template<typename T>
-inline static T min(T a, T b){
-    return a < b ? a : b;
-}
-
-template<typename T, typename S>
-std::tuple<std::vector<vec>, std::vector<double>, std::vector<double>> 
-stochastic_ENKF_normal_test(
-    int ensemble_size, int iters_num,
-    vec init_average, mat init_uncertainty, 
-    std::vector<vec>& ob_results, T ob_op, errors& ob_errors,
-    S model, errors& sys_errors
-    ){
-    // 初始化
-    std::vector<vec> res;
-    std::vector<double> skewnesses;
-    std::vector<double> kurtosises;
-    mat ensemble = arma::mvnrnd(init_average, init_uncertainty, ensemble_size);
-
-    for(int i=0; i<iters_num; i++){
-        std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
-        mat ensemble_analysis;
-
-        std::future<double> skewness = std::async(std::launch::deferred, compute_skewness, ensemble);
-        // skewnesses.push_back(compute_skewness(ensemble));
-        std::future<double> kurtosis = std::async(std::launch::deferred, compute_kurtosis, ensemble);  
-        // kurtosises.push_back(compute_kurtosis(ensemble));
-
-        if(!ob_results[i].is_empty()){
-            int ob_size = ob_results[i].size();
-            // 如果这个时刻有观测，则进行同化和修正
-            // 生成扰动后的观测
-            mat temp, perturb(ob_size, ensemble_size, arma::fill::zeros);
-            if(arma::inv(temp, ob_errors[i]))
-                perturb = arma::mvnrnd(vec(ob_size, arma::fill::zeros), ob_errors[i], ensemble_size);
-            mat after_perturb = perturb.each_col() + ob_results[i];
-
-            // 平均值
-            mat ensemble_mean = mean(ensemble, 1);
-            mat perturb_mean = mean(perturb, 1);
-
-            // 观测后集合
-            mat y_f = ob_op(ensemble);
-            
-            mat x_f = (ensemble.each_col() - ensemble_mean) / sqrt(ensemble_size - 1);
-            mat y_mean = mean(y_f, 1);
-
-            mat auxiliary = after_perturb - y_f;
-            temp = y_f - perturb;
-            y_f = (temp.each_col() - (y_mean - perturb_mean)) / sqrt(ensemble_size - 1);
-
-            // 计算增益矩阵
-            mat gain = x_f * y_f.t() * inv(y_f * y_f.t());
-            // 更新集合
-            ensemble_analysis = ensemble + gain * auxiliary;
-        }else{
-            ensemble_analysis = ensemble;
-        }
-
-        // 储存结果
-        res.push_back(vec(mean(ensemble_analysis, 1)));
-
-        // 如果不是最后一步，就往前推进
-        if(i != iters_num-1)
-            ensemble = model(ensemble_analysis, i, sys_errors[i]);
-
-        skewnesses.push_back(skewness.get());
-        kurtosises.push_back(kurtosis.get());
-    }
-
-    return std::tuple<std::vector<vec>, std::vector<double>, std::vector<double>>(res, skewnesses, kurtosises);
-}
-
-template<typename T, typename S>
-std::vector<vec>
-stochastic_ENKF(
-    int ensemble_size, int iters_num,
-    vec init_average, mat init_uncertainty, 
-    std::vector<vec>& ob_results, T ob_op, errors& ob_errors,
-    S model, errors& sys_errors
-    ){
-    // 初始化
-    std::vector<vec> res;
-    mat ensemble = arma::mvnrnd(init_average, init_uncertainty, ensemble_size);
-
-    for(int i=0; i<iters_num; i++){
-        // std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
-        mat ensemble_analysis;
-
-        if(!ob_results[i].is_empty()){
-            int ob_size = ob_results[i].size();
-            // 如果这个时刻有观测，则进行同化和修正
-            // 生成扰动后的观测
-            mat temp, perturb(ob_size, ensemble_size, arma::fill::zeros);
-            if(arma::inv(temp, ob_errors[i]))
-                perturb = arma::mvnrnd(vec(ob_size, arma::fill::zeros), ob_errors[i], ensemble_size);
-            mat after_perturb = perturb.each_col() + ob_results[i];
-
-            // 平均值
-            mat ensemble_mean = mean(ensemble, 1);
-            mat perturb_mean = mean(perturb, 1);
-
-            // 为了符合算法说明，暂且用下划线
-            // 观测后集合
-            mat y_f = ob_op(ensemble);
-            
-            mat x_f = (ensemble.each_col() - ensemble_mean) / sqrt(ensemble_size - 1);
-            mat y_mean = mean(y_f, 1);
-
-            mat auxiliary = after_perturb - y_f;
-            temp = y_f - perturb;
-            y_f = (temp.each_col() - (y_mean - perturb_mean)) / sqrt(ensemble_size - 1);
-
-            // 计算增益矩阵
-            mat gain = x_f * y_f.t() * inv(y_f * y_f.t());
-            // 更新集合
-            ensemble_analysis = ensemble + gain * auxiliary;
-        }else{
-            ensemble_analysis = ensemble;
-        }
-
-        // 储存结果
-        res.push_back(vec(mean(ensemble_analysis, 1)));
-
-        // 如果不是最后一步，就往前推进
-        if(i != iters_num-1)
-            ensemble = model(ensemble_analysis, i, sys_errors[i]);
-    }
-
-    return res;
-}
-
-template<typename T>
-std::vector<vec>
-stochastic_ENKF(
-    int ensemble_size, int iters_num,
-    vec init_average, mat init_uncertainty, 
-    std::vector<vec>& ob_results, mat ob_op, errors& ob_errors,
-    T model, errors& sys_errors
-    ){
-    // 初始化
-    std::vector<vec> res;
-    mat ensemble = arma::mvnrnd(init_average, init_uncertainty, ensemble_size);
-
-    for(int i=0; i<iters_num; i++){
-        // std::cout<<"time step: "<<i<<"\tn_rows: "<<ensemble.n_rows<<"\tn_cols: "<<ensemble.n_cols<<'\n';
-        mat ensemble_analysis;
-
-        if(!ob_results[i].is_empty()){
-            int ob_size = ob_results[i].size();
-            // 如果这个时刻有观测，则进行同化和修正
-            // 生成扰动后的观测
-            mat temp, perturb(ob_size, ensemble_size, arma::fill::zeros);
-            if(arma::inv(temp, ob_errors[i]))
-                perturb = arma::mvnrnd(vec(ob_size, arma::fill::zeros), ob_errors[i], ensemble_size);
-            mat after_perturb = perturb.each_col() + ob_results[i];
-
-            // 为了符合算法说明，暂且用下划线
-            // 观测后集合
-            mat ensemble_mean = mean(ensemble, 1);
-            mat x_f = (ensemble.each_col() - ensemble_mean) / sqrt(ensemble_size - 1);
-            mat P_f = x_f * x_f.t();
-
-            mat y_f = ob_op * ensemble;
-            mat auxiliary = after_perturb - y_f;
-
-            // 计算增益矩阵
-            mat gain = P_f * ob_op.t() * inv(ob_op * P_f * ob_op.t() + ob_errors[i]);
-            // 更新集合
-            ensemble_analysis = ensemble + gain * auxiliary;
-        }else{
-            ensemble_analysis = ensemble;
-        }
-
-        // 储存结果
-        res.push_back(vec(mean(ensemble_analysis, 1)));
-
-        // 如果不是最后一步，就往前推进
-        if(i != iters_num-1)
-            ensemble = model(ensemble_analysis, i, sys_errors[i]);
-    }
-
-    return res;
-}
-
 template<typename T, typename S>
 std::vector<vec> 
 accumulated_stochastic_ENKF(
@@ -449,7 +240,7 @@ accumulated_stochastic_ENKF_normal_test(
     return std::tuple<std::vector<vec>, std::vector<double>, std::vector<double>>(res, skewnesses, kurtosises);
 }
 
-vec b_alpha(double alpha, int n){
+arma::vec b_alpha(double alpha, int n){
     vec res(n+2, arma::fill::zeros);
     for(int i=1; i<n+2; i++){
         res[i] = pow(i, 1-alpha);
@@ -457,8 +248,8 @@ vec b_alpha(double alpha, int n){
     return res.subvec(1, n+1) - res.subvec(0, n);
 }
 
-mat compute_bino(drowvec orders, int n){
-    mat bino(n+1, orders.n_cols, arma::fill::none);
+arma::mat compute_bino(arma::drowvec orders, int n){
+    arma::mat bino(n+1, orders.n_cols, arma::fill::none);
     
     bino.row(0) = drowvec(orders.n_cols, arma::fill::ones);
     // std::cout<<"compute okay\n";

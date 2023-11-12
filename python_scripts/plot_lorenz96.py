@@ -1,7 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
-from metric import rmse_re
+from python_scripts.metric import rmse_re
 
 sol = np.loadtxt("./data/lorenz96.csv")
 # skewness = np.loadtxt("./data/skewness.csv")

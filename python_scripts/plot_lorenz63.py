@@ -1,6 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from metric import *
+from python_scripts.metric import *
 
 sol = np.loadtxt("./data/lorenz63.csv")
 skewness = np.loadtxt("./data/skewness.csv")

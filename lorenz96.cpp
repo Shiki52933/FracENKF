@@ -1,259 +1,109 @@
-#include "StochasticENKF.hpp"
-#include "ParticleFilter.hpp"
+#include "EnKF.hpp"
+#include "utility.hpp"
 #include "gEnKF.hpp"
-
-#include <iostream>
+#include "Lorenz96.hpp"
 #include <boost/program_options.hpp>
 
 using namespace arma;
 using namespace shiki;
 
-namespace config{
-    int dim = 40;
-    int ob_dim = 6;
-    double F = 8;
-    double dt = 0.005;
-    double t_max = 20;
 
-    double ob_var = 0.01;
-    double sys_var = 0.01, real_sys_var = 0.;
-    double init_var_ = 10;
-    double local_var = 0.01;
-    int select_every = 10;
+void Lorenz96_test(const boost::program_options::variables_map &map){
+    // Lorenz96 model
+    Lorenz96Model model(
+        map["dim"].as<int>(),
+        map["F"].as<double>(),
+        map["dt"].as<double>(),
+        map["max_time"].as<double>(),
+        map["sys_var"].as<double>() * arma::eye(map["dim"].as<int>(), map["dim"].as<int>())
+    );
+    model.reference();
 
-    int ensemble_size = 20;
-}
+    // observation
+    LinearObserver ob(
+        map["ob_gap"].as<int>(),
+        model
+    );
+    int needed = ob.get_times().size();
+    std::cout<<"needed:"<<needed<<"\n";
 
-mat Lorenz96_model(const mat& ensemble, int idx, const mat& sys_var){
-    int M = ensemble.n_rows, N = ensemble.n_cols;
-    mat newer(M, N, arma::fill::none);
-
-    for(int i=0; i<M; i++){
-        int pre = (i + M - 1) % M;
-        int far = (i + M - 2) % M;
-        int next = (i + 1) % M;
-
-        mat derivative = ensemble.row(pre) % (ensemble.row(next) - ensemble.row(far)) - ensemble.row(i) + config::F;
-        mat value = derivative * config::dt + ensemble.row(i);
-        newer.row(i) = value;
+    // ob算子 & ob误差
+    std::vector<sp_mat> hs(needed);
+    std::vector<arma::mat> noises(needed);
+    GeneralRandomObserveHelper helper(map["dim"].as<int>(), map["ob_dim"].as<int>());
+    for(int i=0; i<needed; ++i){
+        hs[i] = helper.generate();
+        noises[i] = map["ob_var"].as<double>() * arma::eye(hs[i].n_rows, hs[i].n_rows);
     }
+    ob.set_H_noise(hs, noises);
+    ob.observe();
 
-    // add perturbation
-    mat temp, perturb(M, N, arma::fill::none);
-    if(arma::inv(temp, sys_var)){
-        perturb = arma::mvnrnd(vec(M,arma::fill::zeros), sys_var, N);
-        newer += perturb;
-    }
-
-    return newer;
-}
-
-mat Lorenz96_linearize(vec mean){
-    int dim = mean.n_rows;
-    mat derivative(dim, dim, arma::fill::zeros);
-    for(int i=0; i<dim; i++){
-        int pre = (i + dim - 1) % dim;
-        int far = (i + dim - 2) % dim;
-        int next = (i + 1) % dim;
-
-        derivative(i, far) = -mean(pre);
-        derivative(i, pre) = mean(next) - mean(far);
-        derivative(i, i) = -1;
-        derivative(i, next) = mean(pre);
-    }
-
-    return derivative;
-}
-
-// we'll realise the observation operator as random matrix
-// so here we omit it
-
-mat generate_Lorenz96(vec v0, double F, double time_max, double dt, const mat& sys_var){
-    int num_iter = time_max / dt;
-    if(num_iter * dt < time_max)
-        num_iter++;
-    int dim = v0.n_rows;
-    
-    // initialize result matrix 
-    mat result(num_iter+1, dim, arma::fill::none);
-    for(int i=0; i<dim; i++){
-        result(0, i) = v0(i);
-    }
-
-    // save config::dt for future recovery
-    double former_dt = config::dt;
-    config::dt = dt;
-    for(int i=0; i<num_iter; i++){
-        v0 = Lorenz96_model(v0, i, sys_var);
-        // save new simulation
-        for(int j=0; j<dim; j++){
-            result(i+1, j) = v0(j);
-        }
-    }
-
-    // recovery config::dt
-    config::dt = former_dt;
-
-    return result;
-}
-
-void test_Lorenz96(){
-    vec v0 = arma::randn(40);
-    mat sys_var(40, 40, arma::fill::zeros);
-    mat sol = generate_Lorenz96(v0, 8, 100, 0.01, sys_var);
-    sol.save("./data/lorenz96.csv", arma::raw_ascii);
-}
-
-void Lorenz96_EnKF(){
-    // 参数
-    int dim = config::dim;
-    int ob_dim = config::ob_dim;
-    double ob_var = config::ob_var;
-    double sys_var = config::sys_var;
-    double init_var_ = config::init_var_;
-    int select_every = config::select_every;
-    // ob算子
-    mat H = arma::randn(ob_dim, dim);
-    auto H_ob = [&H](const mat& ensemble){
-        return H * ensemble;
-    };
-    // 系统误差
-    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
-    *sys_error_ptr *= sys_var;
-    // 参考解
-    vec v0 = arma::randn(dim);
-    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
-    mat all_ob = H_ob(ref.t());
-    ref.save("./data/lorenz96.csv", arma::raw_ascii);
     // 初始值
-    vec init_ave(dim, arma::fill::zeros);
-    // init_ave = v0;
-    mat init_var(dim, dim, arma::fill::eye);
-    init_var *= init_var_;
-    // ob
-    auto ob_op = H_ob;
-    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
-    *error_ptr *= ob_var;
+    arma::mat ensemble;
+    arma::mvnrnd(
+        ensemble, 
+        vec(map["dim"].as<int>()), 
+        map["init_var"].as<double>() * arma::eye(map["dim"].as<int>(), map["dim"].as<int>()), 
+        map["size"].as<int>());
 
-    std::vector<vec> ob_list;
-    errors ob_errors;
-
-    for(int i=0; i<all_ob.n_cols; i++){
-        // std::cout<<"in for\n";
-        ob_errors.add(error_ptr);
-        if(i%select_every == 0)
-            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim, arma::fill::zeros), *error_ptr));
-        else
-            ob_list.push_back(vec());
-    }
-    //std::cout<<"ob-list okay\n";
-    // 迭代次数
-    int num_iter = ob_list.size();
     
-    errors sys_errors;
-    for(int i=0; i<num_iter+1; i++)
-        sys_errors.add(sys_error_ptr);
-    
-    int ensemble_size = config::ensemble_size;
-    auto ENKFResult = stochastic_ENKF_normal_test(
-        ensemble_size, num_iter,
-        init_ave, init_var, 
-        ob_list, ob_op, ob_errors,  
-        Lorenz96_model, sys_errors
-        );
-    std::vector<vec> analysis_ = std::get<0>(ENKFResult);
-    std::vector<double> skewness_ = std::get<1>(ENKFResult);
-    std::vector<double> kurtosis_ = std::get<2>(ENKFResult);
-    std::cout<<"ENKF okay\n";
+    int N = map["size"].as<int>();
+    // -------------------------------------enkf--------------------------------------
+    EnKF enkf;
+    enkf.is_linear = true;
+    enkf.assimilate(
+        model.get_times().size(), 0, map["dt"].as<double>(),
+        ensemble, ob, model
+    );
+    vec re_error1(enkf.relative_error);
 
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    for(int i=0; i<analysis.n_rows; i++){
-        for(int j=0; j<dim; j++){
-            analysis(i, j) = analysis_[i](j);
-        }
+    enkf.is_linear = false;
+    enkf.assimilate(
+        model.get_times().size(), 0, map["dt"].as<double>(),
+        ensemble, ob, model
+    );
+    vec re_error2(enkf.relative_error);
+
+    // -----------------------------------genkf-----------------------------------------
+    std::vector<arma::mat> vars;
+    for(int i=0; i<N; ++i){
+        vars.push_back(map["local_var"].as<double>() * arma::eye(map["dim"].as<int>(), map["dim"].as<int>()));
     }
-    arma::mat skewness(skewness_.size(), 1);
-    arma::mat kurtosis(skewness_.size(), 1);
-    for(int i=0; i<skewness.n_rows; i++){
-        skewness(i, 0) = skewness_[i];
-        kurtosis(i, 0) = kurtosis_[i];
+    gEnKF genkf;
+    genkf.assimilate_linear(
+        model.get_times().size(), 0, map["dt"].as<double>(),
+        ensemble, vars, ob, model
+    );
+    vec re_error3(genkf.relative_error);
+
+    genkf.assimilate(
+        model.get_times().size(), 0, map["dt"].as<double>(),
+        ensemble, vars, ob, model
+    );
+    vec re_error4(genkf.relative_error);
+
+    // ----------------------------------------ggenkf---------------------------------------
+    std::vector<shiki::GVar> gvars;
+    for(int i=0; i<N; ++i){
+        gvars.push_back(GVar());
+        gvars[i].k = 10;
     }
 
-    analysis.save("./data/analysis.csv", arma::raw_ascii);
-    skewness.save("./data/skewness.csv", arma::raw_ascii);
-    kurtosis.save("./data/kurtosis.csv", arma::raw_ascii);
+    ggEnKF ggenkf(0.1, N, true);
+    // 注意ggenkf中用clean_up()清空了relative_error
+    ggenkf.assimilate(model.get_times().size(), 0, map["dt"].as<double>(), ensemble, gvars, ob, model);
+    vec re_error5(ggenkf.relative_error);
+
+    // output
+    arma::mat result(re_error1.size(), 5);
+    result.col(0) = re_error1;
+    result.col(1) = re_error2;
+    result.col(2) = re_error3;
+    result.col(3) = re_error4;
+    result.col(4) = re_error5;
+    result.save("./data/lorenz96.csv", arma::raw_ascii);
 }
-
-void Lorenz96_HEnKF(){
-    // 参数
-    int dim = config::dim;
-    int ob_dim = config::ob_dim;
-    double ob_var = config::ob_var;
-    double sys_var = config::sys_var;
-    double init_var_ = config::init_var_;
-    int select_every = config::select_every;
-    // ob算子
-    mat H = arma::randn(ob_dim, dim);
-    auto H_ob = [&H](const mat& ensemble){
-        return H * ensemble;
-    };
-    // 系统误差
-    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
-    *sys_error_ptr *= sys_var;
-    // 参考解
-    vec v0 = arma::randn(dim);
-    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
-    mat all_ob = H_ob(ref.t());
-    ref.save("./data/lorenz96.csv", arma::raw_ascii);
-    // 初始值
-    vec init_ave(dim, arma::fill::zeros);
-    // init_ave = v0;
-    mat init_var(dim, dim, arma::fill::eye);
-    init_var *= init_var_;
-    // ob
-    auto ob_op = H_ob;
-    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
-    *error_ptr *= ob_var;
-
-    std::vector<vec> ob_list;
-    errors ob_errors;
-
-    for(int i=0; i<all_ob.n_cols; i++){
-        // std::cout<<"in for\n";
-        ob_errors.add(error_ptr);
-        if(i%select_every == 0)
-            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim, arma::fill::zeros), *error_ptr));
-        else
-            ob_list.push_back(vec());
-    }
-    //std::cout<<"ob-list okay\n";
-    // 迭代次数
-    int num_iter = ob_list.size();
-    
-    errors sys_errors;
-    for(int i=0; i<num_iter+1; i++)
-        sys_errors.add(sys_error_ptr);
-    
-    int ensemble_size = config::ensemble_size;
-    auto ENKFResult = stochastic_ENKF(
-        ensemble_size, num_iter,
-        init_ave, init_var, 
-        ob_list, H, ob_errors,  
-        Lorenz96_model, sys_errors
-        );
-    std::vector<vec>& analysis_ = ENKFResult;
-    std::cout<<"HENKF okay\n";
-
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    for(int i=0; i<analysis.n_rows; i++){
-        for(int j=0; j<dim; j++){
-            analysis(i, j) = analysis_[i](j);
-        }
-    }
-
-    analysis.save("./data/analysis.csv", arma::raw_ascii);
-}
-
+/*
 void Lorenz96_particle(){
     // 参数
     int dim = config::dim;
@@ -337,465 +187,33 @@ void Lorenz96_particle(){
     }
     assimilated.save("./data/analysis.csv", arma::raw_ascii);
 }
+*/
 
-void Lorenz96_gEnKF(){
-    // 参数
-    int dim = config::dim;
-    int ob_dim = config::ob_dim;
-    double ob_var = config::ob_var;
-    double sys_var = config::sys_var;
-    double init_var_ = config::init_var_;
-    int select_every = config::select_every;
-    // ob算子
-    mat H = arma::randn(ob_dim, dim);
-    auto H_ob = [&H](const mat& ensemble){
-        return H * ensemble;
-    };
-    // 系统误差
-    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
-    *sys_error_ptr *= sys_var;
-    // 参考解
-    vec v0 = arma::randn(dim);
-    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
-    mat all_ob = H_ob(ref.t());
-    ref.save("./data/lorenz96.csv", arma::raw_ascii);
-    // 初始值
-    vec init_ave(dim, arma::fill::zeros);
-    // init_ave = v0;
-    int ensemble_size = config::ensemble_size;
-    mat init_var(dim, dim, arma::fill::eye);
-    init_var *= init_var_;
-
-    mat ensemble = arma::mvnrnd(init_ave, init_var, ensemble_size);
-    std::vector<mat> vars;
-    for(int i=0; i<ensemble_size; ++i){
-        vars.push_back(config::local_var*arma::eye(dim, dim));
-    }
-    // ob
-    auto ob_op = H_ob;
-    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
-    *error_ptr *= ob_var;
-
-    std::vector<vec> ob_list;
-    errors ob_errors;
-
-    for(int i=0; i<all_ob.n_cols; i++){
-        // std::cout<<"in for\n";
-        ob_errors.add(error_ptr);
-        if(i%select_every == 0)
-            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim, arma::fill::zeros), *error_ptr));
-        else
-            ob_list.push_back(vec());
-    }
-    //std::cout<<"ob-list okay\n";
-    // 迭代次数
-    int num_iter = ob_list.size();
-    
-    errors sys_errors;
-    for(int i=0; i<num_iter+1; i++)
-        sys_errors.add(sys_error_ptr);
-    
-
-    auto ENKFResult = group_ENKF(
-        num_iter, config::dt,
-        ensemble, vars, 
-        ob_list, H, ob_errors,  
-        Lorenz96_model, Lorenz96_linearize, sys_errors
-        );
-    std::vector<vec>& analysis_ = ENKFResult;
-    std::cout<<"gENKF okay"<<std::endl;
-
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    for(int i=0; i<analysis.n_rows; i++){
-        for(int j=0; j<dim; j++){
-            analysis(i, j) = analysis_[i](j);
-        }
-    }
-
-    analysis.save("./data/analysis.csv", arma::raw_ascii);
-}
-
-void Lorenz96_dgEnKF(){
-    // 参数
-    int dim = config::dim;
-    int ob_dim = config::ob_dim;
-    double ob_var = config::ob_var;
-    double sys_var = config::sys_var;
-    double init_var_ = config::init_var_;
-    int select_every = config::select_every;
-    // ob算子
-    mat H = arma::randn(ob_dim, dim);
-    auto H_ob = [&H](const mat& ensemble){
-        return H * ensemble;
-    };
-    // 系统误差
-    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
-    *sys_error_ptr *= sys_var;
-    // 参考解
-    vec v0 = arma::randn(dim);
-    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
-    mat all_ob = H_ob(ref.t());
-    ref.save("./data/lorenz96.csv", arma::raw_ascii);
-    // 初始值
-    vec init_ave(dim, arma::fill::zeros);
-    // init_ave = v0;
-    int ensemble_size = config::ensemble_size;
-    mat init_var(dim, dim, arma::fill::eye);
-    init_var *= init_var_;
-
-    mat ensemble = arma::mvnrnd(init_ave, init_var, ensemble_size);
-    std::vector<mat> vars;
-    for(int i=0; i<ensemble_size; ++i){
-        vars.push_back(config::local_var*arma::eye(dim, dim));
-    }
-    // ob
-    auto ob_op = H_ob;
-    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
-    *error_ptr *= ob_var;
-
-    std::vector<vec> ob_list;
-    errors ob_errors;
-
-    for(int i=0; i<all_ob.n_cols; i++){
-        // std::cout<<"in for\n";
-        ob_errors.add(error_ptr);
-        if(i%select_every == 0)
-            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim, arma::fill::zeros), *error_ptr));
-        else
-            ob_list.push_back(vec());
-    }
-    //std::cout<<"ob-list okay\n";
-    // 迭代次数
-    int num_iter = ob_list.size();
-    
-    errors sys_errors;
-    for(int i=0; i<num_iter+1; i++)
-        sys_errors.add(sys_error_ptr);
-    
-
-    auto ENKFResult = diag_group_ENKF(
-        num_iter, config::dt,
-        ensemble, vars, 
-        ob_list, H, ob_errors,  
-        Lorenz96_model, Lorenz96_linearize, sys_errors
-        );
-    std::vector<vec>& analysis_ = ENKFResult;
-    std::cout<<"gENKF okay"<<std::endl;
-
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    for(int i=0; i<analysis.n_rows; i++){
-        for(int j=0; j<dim; j++){
-            analysis(i, j) = analysis_[i](j);
-        }
-    }
-
-    analysis.save("./data/analysis.csv", arma::raw_ascii);
-}
-
-void Lorenz96_simple_gEnKF(){
-    // 参数
-    int dim = config::dim;
-    int ob_dim = config::ob_dim;
-    double ob_var = config::ob_var;
-    double sys_var = config::sys_var;
-    double init_var_ = config::init_var_;
-    int select_every = config::select_every;
-    // ob算子
-    mat H = arma::randn(ob_dim, dim);
-    auto H_ob = [&H](const mat& ensemble){
-        return H * ensemble;
-    };
-    // 系统误差
-    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
-    *sys_error_ptr *= sys_var;
-    // 参考解
-    vec v0 = arma::randn(dim);
-    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
-    mat all_ob = H_ob(ref.t());
-    ref.save("./data/lorenz96.csv", arma::raw_ascii);
-    // 初始值
-    vec init_ave(dim, arma::fill::zeros);
-    // init_ave = v0;
-    int ensemble_size = config::ensemble_size;
-    mat init_var(dim, dim, arma::fill::eye);
-    init_var *= init_var_;
-
-    mat ensemble = arma::mvnrnd(init_ave, init_var, ensemble_size);
-    std::vector<sp_mat> vars;
-    for(int i=0; i<ensemble_size; ++i){
-        vars.push_back(config::local_var*arma::speye(dim, dim));
-    }
-    // ob
-    auto ob_op = H_ob;
-    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
-    *error_ptr *= ob_var;
-
-    std::vector<vec> ob_list;
-    errors ob_errors;
-
-    for(int i=0; i<all_ob.n_cols; i++){
-        // std::cout<<"in for\n";
-        ob_errors.add(error_ptr);
-        if(i%select_every == 0)
-            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim, arma::fill::zeros), *error_ptr));
-        else
-            ob_list.push_back(vec());
-    }
-    //std::cout<<"ob-list okay\n";
-    // 迭代次数
-    int num_iter = ob_list.size();
-    
-    errors sys_errors;
-    for(int i=0; i<num_iter+1; i++)
-        sys_errors.add(sys_error_ptr);
-    
-
-    auto ENKFResult = simple_group_ENKF(
-        num_iter, config::dt,
-        ensemble, vars, 
-        ob_list, H, ob_errors,  
-        Lorenz96_model, Lorenz96_linearize, sys_errors,
-        1.1
-        );
-    std::vector<vec>& analysis_ = ENKFResult;
-    std::cout<<"simple gENKF okay\n";
-
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    for(int i=0; i<analysis.n_rows; i++){
-        for(int j=0; j<dim; j++){
-            analysis(i, j) = analysis_[i](j);
-        }
-    }
-
-    analysis.save("./data/analysis.csv", arma::raw_ascii);
-}
-
-void Lorenz96_deviated_gEnKF(){
-    // 参数
-    int dim = config::dim;
-    int ob_dim = config::ob_dim;
-    double ob_var = config::ob_var;
-    double sys_var = config::sys_var;
-    double init_var_ = config::init_var_;
-    int select_every = config::select_every;
-    // ob算子
-    mat H = arma::randn(ob_dim, dim);
-    auto H_ob = [&H](const mat& ensemble){
-        return H * ensemble;
-    };
-    // 系统误差
-    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
-    *sys_error_ptr *= sys_var;
-    // 参考解
-    vec v0 = arma::randn(dim);
-    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
-    mat all_ob = H_ob(ref.t());
-    ref.save("./data/lorenz96.csv", arma::raw_ascii);
-    // 初始值
-    vec init_ave(dim, arma::fill::zeros);
-    // init_ave = v0;
-    int ensemble_size = config::ensemble_size;
-    mat init_var(dim, dim, arma::fill::eye);
-    init_var *= init_var_;
-
-    mat ensemble = arma::mvnrnd(init_ave, init_var, ensemble_size);
-    mat perturb = arma::mvnrnd(vec(dim, arma::fill::zeros), 0.01*arma::eye(dim,dim), ensemble_size);
-    mat deviated = ensemble + perturb;
-    // ob
-    auto ob_op = H_ob;
-    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
-    *error_ptr *= ob_var;
-
-    std::vector<vec> ob_list;
-    errors ob_errors;
-
-    for(int i=0; i<all_ob.n_cols; i++){
-        // std::cout<<"in for\n";
-        ob_errors.add(error_ptr);
-        if(i%select_every == 0)
-            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim, arma::fill::zeros), *error_ptr));
-        else
-            ob_list.push_back(vec());
-    }
-    //std::cout<<"ob-list okay\n";
-    // 迭代次数
-    int num_iter = ob_list.size();
-    
-    errors sys_errors;
-    for(int i=0; i<num_iter+1; i++)
-        sys_errors.add(sys_error_ptr);
-    
-
-    auto ENKFResult = deviated_group_ENKF(
-        num_iter, config::dt,
-        ensemble, deviated, 
-        ob_list, H, ob_errors,  
-        Lorenz96_model, Lorenz96_linearize, sys_errors
-        );
-    std::vector<vec>& analysis_ = ENKFResult;
-    std::cout<<"deviated gENKF okay\n";
-
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    for(int i=0; i<analysis.n_rows; i++){
-        for(int j=0; j<dim; j++){
-            analysis(i, j) = analysis_[i](j);
-        }
-    }
-
-    analysis.save("./data/analysis.csv", arma::raw_ascii);
-}
-
-void compare(){
-    // 参数
-    int dim = config::dim;
-    int ob_dim = config::ob_dim;
-    double ob_var = config::ob_var;
-    double sys_var = config::sys_var;
-    double init_var_ = config::init_var_;
-    int select_every = config::select_every;
-    // ob算子
-    mat H = arma::randn(ob_dim, dim);
-    if(arma::approx_equal(H, mat(dim, dim, arma::fill::eye), "absdiff", 1e-5))
-        cout<<"ob operator identity"<<endl;
-    else
-        cout<<"ob operator error"<<endl;
-
-    auto H_ob = [&H](const mat& ensemble){
-        return H * ensemble;
-    };
-    // 系统误差
-    auto sys_error_ptr = std::make_shared<mat>(dim, dim, arma::fill::eye);
-    *sys_error_ptr *= sys_var;
-    // 参考解
-    vec v0 = arma::randn(dim);
-    mat ref = generate_Lorenz96(v0, config::F, config::t_max, config::dt, *sys_error_ptr*config::real_sys_var);
-    mat all_ob = H_ob(ref.t());
-    ref.save("./data/lorenz96.csv", arma::raw_ascii);
-    // 初始值
-    vec init_ave(dim, arma::fill::zeros);
-    // init_ave = v0;
-    mat init_var(dim, dim, arma::fill::eye);
-    init_var *= init_var_;
-    // ob
-    auto ob_op = H_ob;
-    auto error_ptr = std::make_shared<mat>(ob_dim, ob_dim, arma::fill::eye);
-    *error_ptr *= ob_var;
-
-    std::vector<vec> ob_list;
-    errors ob_errors;
-
-    for(int i=0; i<all_ob.n_cols; i++){
-        // std::cout<<"in for\n";
-        ob_errors.add(error_ptr);
-        if(i%select_every == 0)
-            ob_list.push_back(all_ob.col(i)+mvnrnd(vec(ob_dim, arma::fill::zeros), *error_ptr));
-        else
-            ob_list.push_back(vec());
-    }
-    //std::cout<<"ob-list okay\n";
-    // 迭代次数
-    int num_iter = ob_list.size();
-    
-    errors sys_errors;
-    for(int i=0; i<num_iter+1; i++)
-        sys_errors.add(sys_error_ptr);
-    
-    int ensemble_size = config::ensemble_size;
-    auto ENKFResult = stochastic_ENKF(
-        ensemble_size, num_iter,
-        init_ave, init_var, 
-        ob_list, H, ob_errors,  
-        Lorenz96_model, sys_errors
-        );
-    std::vector<vec>& analysis_ = ENKFResult;
-    std::cout<<"HENKF okay\n";
-
-    arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-    for(int i=0; i<analysis.n_rows; i++){
-        for(int j=0; j<dim; j++){
-            analysis(i, j) = analysis_[i](j);
-        }
-    }
-
-    analysis.save("./data/analysis_H.csv", arma::raw_ascii);
-
-    {
-        mat ensemble = arma::mvnrnd(init_ave, init_var, ensemble_size);
-        std::vector<mat> vars;
-        for(int i=0; i<ensemble_size; ++i){
-            vars.push_back(config::local_var*arma::eye(dim, dim));
-        }  
-        auto ENKFResult = group_ENKF(
-            num_iter, config::dt,
-            ensemble, vars, 
-            ob_list, H, ob_errors,  
-            Lorenz96_model, Lorenz96_linearize, sys_errors
-            );
-        std::vector<vec>& analysis_ = ENKFResult;
-        std::cout<<"gENKF okay\n";
-
-        arma::mat analysis(analysis_.size(), analysis_[0].n_rows);
-        for(int i=0; i<analysis.n_rows; i++){
-            for(int j=0; j<dim; j++){
-                analysis(i, j) = analysis_[i](j);
-            }
-        }
-
-        analysis.save("./data/analysis_G.csv", arma::raw_ascii);
-    }
-}
 
 int main(int argc, char** argv){
     using namespace boost::program_options;
-    using namespace config;
 
-    std::string problem;
-
-    options_description cmd("lorenz96 EnKF");
-    cmd.add_options()("problem,p", value<std::string>(&problem)->default_value("ENKF"), "type: ENKF or Particle");
-    cmd.add_options()("dim,d", value<int>(&dim)->default_value(40), "dimension of system");
-    cmd.add_options()("ob_dim,o", value<int>(&ob_dim)->default_value(8), "ob dimension");
-    cmd.add_options()("F,F", value<double>(&F)->default_value(8.0), "F");
-    cmd.add_options()("ob_var,b", value<double>(&ob_var)->default_value(0.1), "ob_error");
-    cmd.add_options()("sys_var,v", value<double>(&sys_var)->default_value(2.5e-5), "system_error");
-    cmd.add_options()("init_var,i", value<double>(&init_var_)->default_value(10), "init_error");
-    cmd.add_options()("local_var,l", value<double>(&local_var)->default_value(0.01), "local_var for gENKF");
-    cmd.add_options()("real_sys_var,r", value<double>(&real_sys_var)->default_value(1), "real_system_error");
-    cmd.add_options()("select,s", value<int>(&select_every)->default_value(10), "select every");
-    cmd.add_options()("size,n", value<int>(&ensemble_size)->default_value(20), "ensemble size");
-    cmd.add_options()("max_time,t", value<double>(&t_max)->default_value(20), "max time");
+    options_description cmd("Problem Lorenz96");
+    cmd.add_options()("problem,p", value<std::string>()->default_value("ENKF"));
+    cmd.add_options()("dim,d", value<int>()->default_value(40), "dimension of system");
+    cmd.add_options()("ob_dim,o", value<int>()->default_value(40), "ob dimension");
+    cmd.add_options()("F,F", value<double>()->default_value(8.0), "F");
+    cmd.add_options()("dt", value<double>()->default_value(0.005), "delta t");
+    cmd.add_options()("ob_var,b", value<double>()->default_value(0.1), "ob_error");
+    cmd.add_options()("sys_var,v", value<double>()->default_value(1), "system_error");
+    cmd.add_options()("init_var,i", value<double>()->default_value(10), "init_error");
+    cmd.add_options()("local_var,l", value<double>()->default_value(0.1), "local_var for gENKF");
+    cmd.add_options()("ob_gap", value<int>()->default_value(10), "ob every");
+    cmd.add_options()("size,n", value<int>()->default_value(20), "ensemble size");
+    cmd.add_options()("max_time,t", value<double>()->default_value(20), "max time");
+    cmd.add_options()("seed", value<int>()->default_value(6666), "random seed");
 
     variables_map map;
     store(parse_command_line(argc, argv, cmd), map);
     notify(map);
 
     arma::arma_rng::set_seed_random();
-    // lorenz63EnKF();
-    if(problem == "ENKF")
-        Lorenz96_EnKF();
-    else if(problem == "gENKF")
-        Lorenz96_gEnKF();
-    else if(problem == "sgENKF")
-        Lorenz96_simple_gEnKF();
-    else if(problem == "dgENKF")
-        Lorenz96_dgEnKF();
-    else if(problem == "HENKF")
-        Lorenz96_HEnKF();
-    else if(problem == "compare")
-        compare();
-    else
-        Lorenz96_particle();
 
-    std::cout<<"problem type: "<<problem<<'\n'
-            <<"dim: "<<dim<<'\n'
-            <<"ob_dim: "<<ob_dim<<'\n'
-            <<"F: "<<F<<'\n'
-            <<"init_var: "<<init_var_<<'\n'
-            <<"ob_var: "<<ob_var<<'\n'
-            <<"sys_var: "<<sys_var<<'\n'
-            <<"real_sys_var: "<<real_sys_var<<'\n'
-            <<"local var: "<<local_var<<'\n'
-            <<"select every: "<<select_every<<'\n'
-            <<"ensemble size: "<<ensemble_size<<'\n'
-            <<"max time: "<<t_max<<'\n';
+    Lorenz96_test(map);
+    
 }

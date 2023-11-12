@@ -21,7 +21,7 @@ namespace shiki
             s = arma::randn(dim);
         }
 
-        void set_state(vec s)
+        void set_state(arma::vec s)
         {
             this->s = s;
         }
@@ -52,9 +52,28 @@ namespace shiki
             return newer;
         }
 
+        arma::sp_mat linear(double t, const arma::vec &mean) override
+        {
+            int dim = mean.n_rows;
+            arma::mat derivative(dim, dim, arma::fill::zeros);
+            for (int i = 0; i < dim; i++)
+            {
+                int pre = (i + dim - 1) % dim;
+                int far = (i + dim - 2) % dim;
+                int next = (i + 1) % dim;
+
+                derivative(i, far) = -mean(pre);
+                derivative(i, pre) = mean(next) - mean(far);
+                derivative(i, i) = -1;
+                derivative(i, next) = mean(pre);
+            }
+
+            return arma::sp_mat(derivative);
+        }
+
         arma::sp_mat noise(double t) override
         {
-            return arma::sp_mat(sys_var);
+            return dt * dt * arma::sp_mat(sys_var);
         }
 
         void reference() override

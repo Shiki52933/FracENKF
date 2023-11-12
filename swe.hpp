@@ -1,6 +1,6 @@
 #pragma once
 #include "utility.hpp"
-#include <assert.h>
+#include "Krylov.hpp"
 
 namespace shiki
 {
@@ -480,7 +480,7 @@ namespace shiki
         int iter_times;
         std::vector<double> times;
         Structure2d structure;
-        vec sol;
+        arma::vec sol;
 
     public:
         SweBHMM(int gx, int gy, int iter_times = 5000)
@@ -516,19 +516,19 @@ namespace shiki
             }
         }
 
-        vec get_state(double t) override
+        arma::vec get_state(double t) override
         {
             // update t to closest value in times
             int idx = std::lower_bound(times.begin(), times.end(), t) - times.begin();
             // read from file
-            vec state;
+            arma::vec state;
             state.load("./data/swe/sol" + std::to_string(times[idx]) + ".bin", arma::raw_binary);
             return state;
         }
 
-        mat model(double t, double dt, const mat &e) override
+        arma::mat model(double t, double dt, const arma::mat &e) override
         {
-            mat next = mat(e.n_rows, e.n_cols, arma::fill::none);
+            arma::mat next = arma::mat(e.n_rows, e.n_cols, arma::fill::none);
             for (int i = 0; i < e.n_cols; ++i)
             {
                 next.col(i) = model(t, dt, e.col(i), structure);
@@ -536,9 +536,9 @@ namespace shiki
             return next;
         }
 
-        sp_mat noise(double t) override
+        arma::sp_mat noise(double t) override
         {
-            return sp_mat(sol.n_rows, sol.n_rows);
+            return arma::sp_mat(sol.n_rows, sol.n_rows);
         }
     };
 
@@ -549,13 +549,13 @@ namespace shiki
     public:
         SweBHMM::Structure2d &structure;
         int N_obs;
-        sp_mat H;
+        arma::sp_mat H;
         int iter = 0;
 
     public:
         StructureGridObserveOperatorGenerator(SweBHMM::Structure2d &structure, int N_obs) : structure(structure), N_obs(N_obs)
         {
-            H = sp_mat(N_obs, structure.m_grid_x * structure.m_grid_y * structure.m_unknowns);
+            H = arma::sp_mat(N_obs, structure.m_grid_x * structure.m_grid_y * structure.m_unknowns);
         }
 
         void ob_at(int i, int j, int k)
@@ -572,11 +572,12 @@ namespace shiki
             assert(iter <= N_obs);
         }
 
-        sp_mat get_H()
+        arma::sp_mat get_H()
         {
             return H;
         }
     };
+
 
     /// @brief Given a structured grid and numbers of observe each direction,
     /// @brief generate a random observe operator, which observes with random offset
@@ -593,7 +594,7 @@ namespace shiki
         {
         }
 
-        sp_mat generate()
+        arma::sp_mat generate()
         {
             StructureGridObserveOperatorGenerator ob(structure, N_obs_x * N_obs_y);
             int max_offset_x = structure.m_grid_x / N_obs_x;

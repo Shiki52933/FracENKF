@@ -1,6 +1,8 @@
 #pragma once
 #include <armadillo>
 #include <assert.h>
+#include <vector>
+#include <cmath>
 
 namespace shiki
 {
@@ -22,6 +24,10 @@ namespace shiki
         // t == now, t + dt == next
         virtual arma::mat model(double t, double dt, const arma::mat &e) = 0;
         virtual arma::sp_mat noise(double t) = 0;
+        virtual arma::sp_mat linear(double t, const arma::vec &e)
+        {
+            return arma::sp_mat(e.n_rows, e.n_rows);
+        }
     };
 
     class Observer
@@ -60,6 +66,16 @@ namespace shiki
             }
         }
 
+        int find_idx(double t)
+        {
+            for(int i=0; i<times.size(); ++i){
+                if(std::abs(times[i] - t) < 1e-6){
+                    return i;
+                }
+            }
+            return -1;
+        }
+
         auto get_times()
         {
             return times;
@@ -75,7 +91,7 @@ namespace shiki
 
         bool is_observable(double t) override
         {
-            return std::binary_search(times.begin(), times.end(), t);
+            return find_idx(t) != -1;
         }
 
         void observe() override
@@ -93,14 +109,12 @@ namespace shiki
 
         arma::vec get_observation(double t) override
         {
-            int idx = std::lower_bound(times.begin(), times.end(), t) - times.begin();
-            return observations.at(idx);
+            return observations.at(find_idx(t));
         }
 
         arma::vec observe(double t, arma::vec state) override
         {
-            int idx = std::lower_bound(times.begin(), times.end(), t) - times.begin();
-            return Hs[idx] * state;
+            return Hs.at(find_idx(t)) * state;
         }
 
         arma::mat observe(double t, arma::mat state) override
@@ -194,7 +208,7 @@ namespace shiki
         return kurtosis;
     }
 
-    void print_singular_values(const mat &var)
+    void print_singular_values(const arma::mat &var)
     {
         arma::rowvec svd = arma::svd(var).t();
         double sum = arma::accu(svd);
@@ -204,14 +218,14 @@ namespace shiki
         std::cout << arma::cumsum(svd) / sum;
     }
 
-    void print_singular_values(const std::vector<mat> &vars)
+    void print_singular_values(const std::vector<arma::mat> &vars)
     {
         double singular_max = -1;
         double singular_min = std::numeric_limits<double>().max();
 
-        for (const mat &var : vars)
+        for (const arma::mat &var : vars)
         {
-            vec svd = arma::svd(var);
+            arma::vec svd = arma::svd(var);
             singular_max = std::max(singular_max, svd[0]);
             singular_min = std::min(singular_min, svd[svd.n_rows - 1]);
         }
