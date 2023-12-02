@@ -21,7 +21,7 @@ void swe_test(const boost::program_options::variables_map &map)
     std::vector<arma::sp_mat> hs(needed);
     std::vector<arma::mat> noises(needed);
     RandomObserveHelper helper(swe.structure, map["ob-num"].as<int>(), map["ob-num"].as<int>(), 2);
-    if (map["ob_type"].as<std::string>() == "random")
+    if (map["ob-type"].as<std::string>() == "random")
     {
 
         for (int i = 0; i < needed; ++i)
@@ -105,7 +105,7 @@ int main(int argc, char **argv)
         ("grid_x", po::value<int>()->default_value(150), "grid number in x direction")
         ("grid_y", po::value<int>()->default_value(150), "grid number in y direction")
         ("times", po::value<int>()->default_value(500), "iter times")
-        ("ob_type", po::value<std::string>()->default_value("fixed"), "H type")
+        ("ob-type", po::value<std::string>()->default_value("fixed"), "H type")
         ("ob_var", po::value<double>()->default_value(0.01), "ob var")
         ("en-size", po::value<int>()->default_value(20), "ensemble size")
         ("ob-num", po::value<int>()->default_value(11), "ob number per direction")

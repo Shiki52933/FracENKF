@@ -477,8 +477,8 @@ namespace shiki
                         vars[j].B.push_back(KG);
                     }
 
-                    clean_up(ensemble, vars);
-                    // trim_vars_no_k(vars);
+                    // clean_up(ensemble, vars);
+                    trim_vars_no_k(vars);
                 }
                 
                 {
