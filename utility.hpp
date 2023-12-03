@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <vector>
 #include <cmath>
+#include <stdexcept>
+#include <functional>
 
 namespace shiki
 {
@@ -68,8 +70,10 @@ namespace shiki
 
         int find_idx(double t)
         {
-            for(int i=0; i<times.size(); ++i){
-                if(std::abs(times[i] - t) < 1e-6){
+            for (int i = 0; i < times.size(); ++i)
+            {
+                if (std::abs(times[i] - t) < 1e-6)
+                {
                     return i;
                 }
             }
@@ -232,4 +236,27 @@ namespace shiki
         std::cout << "biggest svd: " << singular_max << '\t' << "smallest svd: " << singular_min << std::endl;
     }
 
+    arma::mat compute_bino(arma::drowvec orders, int n)
+    {
+        arma::mat bino(n + 1, orders.n_cols, arma::fill::none);
+
+        bino.row(0) = arma::drowvec(orders.n_cols, arma::fill::ones);
+        // std::cout<<"compute okay\n";
+        for (int i = 1; i < n + 1; i++)
+        {
+            bino.row(i) = (1. - (1. + orders) / i) % bino.row(i - 1);
+        }
+
+        return bino;
+    }
+
+    arma::vec b_alpha(double alpha, int n)
+    {
+        arma::vec res(n + 2, arma::fill::zeros);
+        for (int i = 1; i < n + 2; i++)
+        {
+            res[i] = pow(i, 1 - alpha);
+        }
+        return res.subvec(1, n + 1) - res.subvec(0, n);
+    }
 }
