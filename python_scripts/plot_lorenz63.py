@@ -1,10 +1,10 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from python_scripts.metric import *
+from metric import *
 
 sol = np.loadtxt("./data/lorenz63.csv")
-skewness = np.loadtxt("./data/skewness.csv")
-kurtosis = np.loadtxt("./data/kurtosis.csv")
+# skewness = np.loadtxt("./data/skewness.csv")
+# kurtosis = np.loadtxt("./data/kurtosis.csv")
 
 fig = plt.figure()
 ax1 = plt.axes(projection='3d')
@@ -14,7 +14,7 @@ plt.show()
 # plt.savefig("./images/lorenz63.png")
 # plt.close()
 
-analysis = np.loadtxt("./data/analysis.csv")
+analysis = np.loadtxt("./data/fenkf_analysis.csv")
 
 fig = plt.figure()
 ax1 = plt.axes(projection='3d')
@@ -24,7 +24,7 @@ plt.show()
 # plt.savefig("./images/analysis.png")
 # plt.close()
 
-rmse_re(analysis, sol, "./data/rmse.csv", "./data/re.csv")
+# rmse_re(analysis, sol, "./data/rmse.csv", "./data/re.csv")
 
 error = analysis - sol
 ab_error = np.max(np.abs(error), axis=-1)
