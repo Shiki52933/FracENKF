@@ -2,6 +2,7 @@
 #include "3DVar.hpp"
 #include "fUKF.hpp"
 #include "fEnKF.hpp"
+#include "fgEnKF.hpp"
 #include <boost/program_options.hpp>
 
 using namespace arma;
@@ -102,6 +103,22 @@ void test(const boost::program_options::variables_map &map)
         fenkf_result.row(i) = fenkf.res[i].t();
     }
     fenkf_result.save("./data/fenkf_analysis.csv", arma::raw_ascii);
+
+    // -------------------------------fgenkf 3d----------------------------------
+    fgEnKF fgenkf(3, orders);
+    ensemble = 1 + 0.1 * arma::randn(3, size);
+    std::vector<arma::mat> vars(size, 0.1 * arma::eye(3, 3));
+    fgenkf.assimilate(
+        model.get_times().size(), 0, dt, 3,
+        ensemble, vars, model, ob);
+    // save result
+    arma::mat fgenkf_result(fgenkf.res.size(), 3);
+    for (int i = 0; i < fgenkf.res.size(); ++i)
+    {
+        fgenkf_result.row(i) = fgenkf.res[i].t();
+    }
+    fgenkf_result.save("./data/fgenkf_analysis.csv", arma::raw_ascii);
+
 }
 
 int main(int argc, char **argv)
@@ -109,7 +126,19 @@ int main(int argc, char **argv)
     using namespace boost::program_options;
 
     options_description cmd("Problem Fractional Lorenz63");
-    cmd.add_options()("help,h", "produce help message")("alpha", value<double>()->default_value(1.1), "alpha of model")("beta", value<double>()->default_value(1.1), "beta of model")("gamma", value<double>()->default_value(1.1), "gamma of model")("dt", value<double>()->default_value(0.01), "dt of model")("max_time", value<double>()->default_value(20), "max_time of model")("sys_var", value<double>()->default_value(1), "sys_var of model")("ob_gap", value<int>()->default_value(10), "ob_gap of model")("ob_dim", value<int>()->default_value(3), "ob_dim of model")("ob_var", value<double>()->default_value(0.1), "ob_var of model")("init_var", value<double>()->default_value(10), "init_var of model")("size", value<int>()->default_value(20), "size of model");
+    cmd.add_options()
+    ("help,h", "produce help message")
+    ("alpha", value<double>()->default_value(1.1), "alpha of model")
+    ("beta", value<double>()->default_value(1.1), "beta of model")
+    ("gamma", value<double>()->default_value(1.1), "gamma of model")
+    ("dt", value<double>()->default_value(0.005), "dt of model")
+    ("max_time", value<double>()->default_value(20), "max_time of model")
+    ("sys_var", value<double>()->default_value(0), "sys_var of model")
+    ("ob_gap", value<int>()->default_value(10), "ob_gap of model")
+    ("ob_dim", value<int>()->default_value(3), "ob_dim of model")
+    ("ob_var", value<double>()->default_value(0.1), "ob_var of model")
+    ("init_var", value<double>()->default_value(10), "init_var of model")
+    ("size", value<int>()->default_value(20), "size of model");
 
     variables_map map;
     store(parse_command_line(argc, argv, cmd), map);

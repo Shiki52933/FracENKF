@@ -10,12 +10,13 @@ namespace shiki
         double dt = 0.005;
         double t_max = 20;
         arma::mat sys_var;
-        arma::vec s;
+        
 
         std::vector<arma::vec> states;
         std::vector<double> times;
 
     public:
+        arma::vec s;
         arma::drowvec orders;
         arma::mat binos;
 

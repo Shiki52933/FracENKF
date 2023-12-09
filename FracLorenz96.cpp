@@ -2,6 +2,7 @@
 #include "3DVar.hpp"
 #include "fUKF.hpp"
 #include "fEnKF.hpp"
+#include "fgEnKF.hpp"
 #include <boost/program_options.hpp>
 
 using namespace arma;
@@ -48,6 +49,7 @@ void test(const boost::program_options::variables_map &map)
     // -------------------------------var 3d----------------------------------
     arma::vec mean = arma::randn(dim);
     Var3d var(true, 0.01 * arma::eye(2*dim, 2*dim), 2);
+    std::cout<<"---------------------------var 3d----------------------------"<<std::endl;
     var.assimilate(
         model.get_times().size(), 0, dt,
         mean, model, ob);
@@ -61,28 +63,30 @@ void test(const boost::program_options::variables_map &map)
     var_result.save("./data/var_analysis.csv", arma::raw_ascii);
 
     // -------------------------------ukf 3d----------------------------------
-    FUKF fukf(
-        1, 2, 0,
-        model.orders,
-        [&](mat e){ return model.rhs(e);});
-    arma::mat fukf_var = arma::eye(dim, dim);
-    fukf.assimilate(
-        model.get_times().size(), 0, dt,
-        mean, fukf_var, model, ob,
-        0.1 * arma::eye(dim, dim));
-    // save result
-    arma::mat fukf_result(fukf.res.size(), dim);
-    for (int i = 0; i < fukf.res.size(); ++i)
-    {
-        fukf_result.row(i) = fukf.res[i].t();
-    }
-    fukf_result.save("./data/ukf_analysis.csv", arma::raw_ascii);
+    // FUKF fukf(
+    //     1, 2, 0,
+    //     model.orders,
+    //     [&](mat e){ return model.rhs(e);});
+    // arma::mat fukf_var = arma::eye(dim, dim);
+    // std::cout<<"---------------------------ukf----------------------------"<<std::endl;
+    // fukf.assimilate(
+    //     model.get_times().size(), 0, dt,
+    //     mean, fukf_var, model, ob,
+    //     0.1 * arma::eye(dim, dim));
+    // // save result
+    // arma::mat fukf_result(fukf.res.size(), dim);
+    // for (int i = 0; i < fukf.res.size(); ++i)
+    // {
+    //     fukf_result.row(i) = fukf.res[i].t();
+    // }
+    // fukf_result.save("./data/ukf_analysis.csv", arma::raw_ascii);
 
     // -------------------------------enkf 3d----------------------------------
     double init_var = map["init_var"].as<double>();
     int size = map["size"].as<int>();
     arma::mat ensemble = init_var * arma::randn(dim, size);
     fEnKF fenkf(5);
+    std::cout<<"---------------------------enkf----------------------------"<<std::endl;
     fenkf.assimilate(
         model.get_times().size(), 0, dt,
         ensemble, model, ob);
@@ -93,6 +97,22 @@ void test(const boost::program_options::variables_map &map)
         fenkf_result.row(i) = fenkf.res[i].t();
     }
     fenkf_result.save("./data/fenkf_analysis.csv", arma::raw_ascii);
+
+    // ------------------------------------fgenkf----------------------------------
+    fgEnKF fgenkf(3, model.orders);
+    ensemble.each_col() = model.get_state(0);
+    std::vector<arma::mat> vars(size, 0.1 * arma::eye(dim, dim));
+    std::cout<<"---------------------------fgenkf----------------------------"<<std::endl;
+    fgenkf.assimilate(
+        model.get_times().size(), 0, dt, dim,
+        ensemble, vars, model, ob);
+    // save result
+    arma::mat fgenkf_result(fgenkf.res.size(), dim);
+    for (int i = 0; i < fgenkf.res.size(); ++i)
+    {
+        fgenkf_result.row(i) = fgenkf.res[i].t();
+    }
+    fgenkf_result.save("./data/fgenkf_analysis.csv", arma::raw_ascii); 
 }
 
 int main(int argc, char **argv)

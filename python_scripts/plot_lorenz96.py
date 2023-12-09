@@ -13,7 +13,7 @@ ax1.plot3D(sol[:,0], sol[:,1], sol[:,2], 'gray')
 plt.title("reference 3 components")
 plt.show()
 
-analysis = np.loadtxt("./data/fenkf_analysis.csv")
+analysis = np.loadtxt("./data/fgenkf_analysis.csv")
 
 fig = plt.figure()
 ax1 = plt.axes(projection='3d')

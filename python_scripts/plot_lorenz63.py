@@ -14,7 +14,7 @@ plt.show()
 # plt.savefig("./images/lorenz63.png")
 # plt.close()
 
-analysis = np.loadtxt("./data/fenkf_analysis.csv")
+analysis = np.loadtxt("./data/fgenkf_analysis.csv")
 
 fig = plt.figure()
 ax1 = plt.axes(projection='3d')
