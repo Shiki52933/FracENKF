@@ -30,14 +30,14 @@ namespace shiki
 
         void assimilate(int iters_num, double t0, double dt, int dim,
                         arma::mat ensemble, std::vector<arma::mat> vars,
-                        BHMM &hmm, Observer &ob)
+                        BHMM &hmm, Observer &ob, arma::mat inflation)
         {
             // 初始化
             max_error.clear();
             relative_error.clear();
             res.clear();
             int ensemble_size = ensemble.n_cols;
-            arma::mat I = arma::eye(ensemble.n_rows, ensemble.n_rows);
+            arma::mat I = arma::eye(dim, dim);
 
             arma::sp_mat h(orders.n_elem, orders.n_elem);
             for (int i = 0; i < orders.n_elem; ++i)
@@ -66,7 +66,10 @@ namespace shiki
                     arma::mat H_var = H * x_f.submat(0, 0, dim - 1, x_f.n_cols - 1) * x_f.t() + H * Var;
 
                     // 计算增益矩阵
-                    arma::mat gain = H_var.t() * arma::inv(H_var * H_var.t() + ob.noise(t0));
+                    arma::mat in_inv = (H_var * H_var.t()) + ob.noise(t0);
+                    std::cout<<in_inv<<std::endl;
+                    std::cout<<arma::det(in_inv)<<std::endl;
+                    arma::mat gain = arma::solve(in_inv, H_var).t();
 
                     // 分析步
                     ensemble.submat(0, 0, total_dim-1, ensemble.n_cols-1) += gain * (ob.get_observation(t0) - (H * ensemble.submat(0, 0, dim - 1, ensemble.n_cols - 1)).each_col());
@@ -105,8 +108,13 @@ namespace shiki
                         }
                         arma::sp_mat lower = arma::eye<arma::sp_mat>(vars[j].n_rows, vars[j].n_rows);
                         arma::sp_mat total_D = arma::join_cols(propa, lower);
+
+                        if (j == 0){
+                            std::cout<<arma::mat(total_D)<<std::endl;
+                        }
+
                         vars[j] = total_D * vars[j] * total_D.t();
-                        // vars[j].submat(0, 0, dim - 1, dim - 1) += h * h * hmm.noise(t0);
+                        vars[j].submat(0, 0, dim - 1, dim - 1) += dt * dt * I;
                         if (current_window == len_window)
                         {
                             vars[j] = vars[j].submat(0, 0, len_window * dim - 1, len_window * dim - 1);

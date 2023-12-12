@@ -91,7 +91,7 @@ void test(const boost::program_options::variables_map &map)
     // -------------------------------enkf 3d----------------------------------
     double init_var = map["init_var"].as<double>();
     int size = map["size"].as<int>();
-    arma::mat ensemble = init_var * arma::randn(3, size);
+    arma::mat ensemble = arma::mvnrnd(vec(3), init_var * arma::eye(3, 3), size);
     fEnKF fenkf(1);
     fenkf.assimilate(
         model.get_times().size(), 0, dt,
@@ -105,12 +105,13 @@ void test(const boost::program_options::variables_map &map)
     fenkf_result.save("./data/fenkf_analysis.csv", arma::raw_ascii);
 
     // -------------------------------fgenkf 3d----------------------------------
-    fgEnKF fgenkf(3, orders);
-    ensemble = 1 + 0.1 * arma::randn(3, size);
+    int window = map["window"].as<int>();
+    fgEnKF fgenkf(window, orders);
+    ensemble = 1 * arma::randn(3, size);
     std::vector<arma::mat> vars(size, 0.1 * arma::eye(3, 3));
     fgenkf.assimilate(
         model.get_times().size(), 0, dt, 3,
-        ensemble, vars, model, ob);
+        ensemble, vars, model, ob, 0.1 * arma::eye(3*window, 3*window));
     // save result
     arma::mat fgenkf_result(fgenkf.res.size(), 3);
     for (int i = 0; i < fgenkf.res.size(); ++i)
@@ -138,7 +139,8 @@ int main(int argc, char **argv)
     ("ob_dim", value<int>()->default_value(3), "ob_dim of model")
     ("ob_var", value<double>()->default_value(0.1), "ob_var of model")
     ("init_var", value<double>()->default_value(10), "init_var of model")
-    ("size", value<int>()->default_value(20), "size of model");
+    ("size", value<int>()->default_value(20), "size of model")
+    ("window", value<int>()->default_value(3), "window of model");
 
     variables_map map;
     store(parse_command_line(argc, argv, cmd), map);
